@@ -50,11 +50,16 @@
 #include <sysdolphin/baselib/lobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/mobj.h>
+#include <melee/mn/mnmouse.h>
 
 /* 22C068 */ static void mn_8022C068(HSD_LObj*, int, int);
 
 static HSD_GObj* mn_804D6BA8;
 static HSD_GObj* mn_804D6BAC;
+#ifdef MELEE_PC
+/// Newest main-menu panel (the one taking input); cleared when freed.
+static MainMenuData* mnMouse_TopMenu;
+#endif
 static HSD_GObj* mn_804D6BB0;
 MenuInputState mn_804D6BC8;
 HSD_CObjDesc* MenMain_cam;
@@ -1434,6 +1439,9 @@ HSD_GObj* mn_8022B3A0(u8 state)
     HSD_ASSERTREPORT(0x65D, user_data, "Can't get user_data.\n");
     GObj_InitUserData(gobj, 0, mn_8022EB04, user_data);
     user_data->menu_kind = mn_804A04F0.cur_menu;
+#ifdef MELEE_PC
+    mnMouse_TopMenu = user_data;
+#endif
     user_data->hovered_selection = mn_804A04F0.hovered_selection;
     user_data->state = state;
     user_data->description = NULL;
@@ -1910,7 +1918,7 @@ void mn_8022C4F4(HSD_GObj* gp)
         mn_803EB6B0[MENU_KIND_SPECIAL].selection_count & 0xFF;
     MenuExitData* data;
     void (*temp_r28)(HSD_GObj*);
-    u32 buttons = mn_80229624(4);
+    u32 buttons = MN_MENU_INPUT();
 
     PAD_STACK(8);
 
@@ -2024,7 +2032,7 @@ void mn_8022C7CC(HSD_GObj* gp)
     int selection_count =
         mn_803EB6B0[MENU_KIND_STADIUM].selection_count & 0xFF;
     void (*temp_r28)(HSD_GObj*);
-    u32 buttons = mn_80229624(4);
+    u32 buttons = MN_MENU_INPUT();
     PAD_STACK(8);
 
     mn_804A04F0.buttons = buttons;
@@ -2083,7 +2091,7 @@ void mn_8022CA54(HSD_GObj* gp)
     void (*temp_r30)(HSD_GObj*);
     PAD_STACK(8);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -2150,7 +2158,7 @@ void mn_8022CC28(HSD_GObj* gp)
     void (*temp_r28)(HSD_GObj*);
     PAD_STACK(8);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -2228,7 +2236,7 @@ void mn_8022CE6C(HSD_GObj* gp)
 
     PAD_STACK(8);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804A04F0.entering_menu = 1;
@@ -2322,7 +2330,7 @@ void mn_8022D104(HSD_GObj* gp)
     PAD_STACK(8);
 
     selection_count = mn_803EB6B0[MENU_KIND_SETTINGS].selection_count & 0xFF;
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -2401,7 +2409,7 @@ void mn_8022D34C(HSD_GObj* gp)
     void (*temp_r28)(HSD_GObj*);
     PAD_STACK(8);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -2478,7 +2486,7 @@ void mn_8022D594(HSD_GObj* gp)
 
     PAD_STACK(8);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -2567,7 +2575,7 @@ void mn_8022D7F4(HSD_GObj* gp)
     PAD_STACK(8);
 
     selection_count = mn_803EB6B0[MENU_KIND_1P].selection_count & 0xFF;
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804A04F0.entering_menu = 1;
@@ -2669,7 +2677,7 @@ void mn_8022DB10(HSD_GObj* gp)
     PAD_STACK(8);
 
     selection_count = mn_803EB6B0[MENU_KIND_MAIN].selection_count & 0xFF;
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mf->buttons = buttons;
     if (buttons & MenuInput_Confirm) {
         mn_804D6BC8.cooldown = 5;
@@ -3096,6 +3104,11 @@ void mn_8022EAE0(HSD_GObj* gobj)
 
 void mn_8022EB04(void* user_data)
 {
+#ifdef MELEE_PC
+    if (mnMouse_TopMenu == user_data) {
+        mnMouse_TopMenu = NULL;
+    }
+#endif
     HSD_Free(user_data);
 }
 
@@ -3135,3 +3148,115 @@ void mn_8022EBDC(void)
 /// fn_8022F538\n"); } void mn_8022FB88() { OSPanic(__FILE__, __LINE__, "not
 /// implemented: mn_8022FB88\n"); } void mn_8022FD18() { OSPanic(__FILE__,
 /// __LINE__, "not implemented: mn_8022FD18\n"); }
+
+#ifdef MELEE_PC
+/* ---- mouse (PC) ------------------------------------------------------- */
+
+static int mnMouse_MainRows(HSD_JObj** anchors, bool* enabled)
+{
+    MainMenuData* data = mnMouse_TopMenu;
+    MenuKind kind = mn_804A04F0.cur_menu;
+    int n, i;
+
+    // Only a settled panel: during a transition the old and new panels are
+    // both alive and still moving.
+    if (data == NULL || data->state != MENU_STATE_IDLE ||
+        data->menu_kind != kind)
+    {
+        return 0;
+    }
+    n = mn_803EB6B0[kind].selection_count & 0xFF;
+    if (n > MN_MOUSE_MAX_ROWS) {
+        n = MN_MOUSE_MAX_ROWS;
+    }
+    for (i = 0; i < n; i++) {
+        enabled[i] = mn_80229938(kind, i);
+        anchors[i] =
+            enabled[i] ? data->tree[mn_803EAE68[mn_80229A04(kind, i)]] : NULL;
+    }
+    return n;
+}
+
+static void mnMouse_MainHover(int row)
+{
+    mn_804A04F0.hovered_selection = row;
+}
+
+u32 mnMouse_FilterMenuInput(u32 buttons)
+{
+    HSD_JObj* anchors[MN_MOUSE_MAX_ROWS];
+    bool enabled[MN_MOUSE_MAX_ROWS];
+    int (*rows)(HSD_JObj**, bool*);
+    void (*hover)(int);
+    int value_rows = 0; ///< rows [0, value_rows) and value_row_extra use Left/Right
+    int value_row_extra = -1;
+    int n, row;
+    bool clicked;
+
+    switch (mn_804A04F0.cur_menu) {
+    case MENU_KIND_MAIN:
+    case MENU_KIND_1P:
+    case MENU_KIND_VS:
+    case MENU_KIND_TOY:
+    case MENU_KIND_SETTINGS:
+    case MENU_KIND_DATA:
+    case MENU_KIND_REG:
+    case MENU_KIND_STADIUM:
+    case MENU_KIND_SPECIAL:
+    case MENU_KIND_RECORDS:
+        rows = mnMouse_MainRows;
+        hover = mnMouse_MainHover;
+        break;
+    case MENU_KIND_RULES:
+        rows = mnMainRule_MouseRows;
+        hover = mnMainRule_MouseHover;
+        value_rows = 5;
+        break;
+    case MENU_KIND_RULES_EXTRA:
+        rows = mnRulePlus_MouseRows;
+        hover = mnRulePlus_MouseHover;
+        value_rows = 5;
+        break;
+    case MENU_KIND_RULES_ITEMS:
+        rows = mnItemSw_MouseRows;
+        hover = mnItemSw_MouseHover;
+        value_row_extra = 0x1F; // item frequency
+        break;
+    case MENU_KIND_RULES_STAGE:
+        rows = mnStageSw_MouseRows;
+        hover = mnStageSw_MouseHover;
+        break;
+    default:
+        return buttons;
+    }
+    if (mn_804D6BAC == NULL) {
+        return buttons;
+    }
+    n = rows(anchors, enabled);
+    if (n <= 0) {
+        return buttons;
+    }
+    row = mnMouse_PickRow(GET_COBJ(mn_804D6BAC), anchors, enabled, n,
+                          &clicked);
+    if (row == MN_MOUSE_IDLE) {
+        return buttons;
+    }
+    if (row >= 0) {
+        u16 old = mn_804A04F0.hovered_selection;
+        hover(row);
+        if (mn_804A04F0.hovered_selection != old) {
+            sfxMove();
+        }
+    }
+    if (clicked) {
+        if (row < 0) {
+            // A click on empty space doesn't confirm the current option.
+            buttons &= ~(MenuInput_Confirm | MenuInput_AButton);
+        } else if (row < value_rows || row == value_row_extra) {
+            buttons &= ~(MenuInput_Confirm | MenuInput_AButton);
+            buttons |= MenuInput_Right;
+        }
+    }
+    return buttons;
+}
+#endif

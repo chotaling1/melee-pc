@@ -5,7 +5,7 @@ Sections are in priority order.
 
 ## Dev tools
 
-### Mouse control for menus (queued 2026-09-17; phases 0-1 done and confirmed 2026-09-17, OS cursor hidden in game; phase 2 open)
+### Mouse control for menus (queued 2026-09-17; phases 0-1 done and confirmed 2026-09-17, OS cursor hidden in game; phase 2 built 2026-09-17, awaiting Chuck's test)
 Drive in-game menus with the mouse for development. No game-side mouse
 handling exists today; aurora forwards SDL mouse events only to ImGui/RmlUi
 (the F1 menu already takes the mouse).
@@ -28,6 +28,16 @@ handling exists today; aurora forwards SDL mouse events only to ImGui/RmlUi
 - Phase 2, click-to-select in list menus: main menu first (project option
   JObjs, set `mn_804A04F0.hovered_selection`, run the normal hover refresh);
   other `mn*` screens need per-screen hit tests.
+  - Done (untested in game): `mnMouse_PickRow` (`src/melee/mn/mnmouse.c`)
+    projects option JObjs and hit-tests rows; `mnMouse_FilterMenuInput`
+    (`mnmain.c`, via `MN_MENU_INPUT()`) covers the `mnmain.c` list menus
+    (MENU_KIND_MAIN, 1P, VS, TOY, SETTINGS, DATA, REG, STADIUM, SPECIAL,
+    RECORDS), Rules, Additional Rules, Item switch and Stage switch. Hover follows the mouse; a click
+    confirms the row under it, a click on a value row acts as Right, a click
+    on empty space is dropped.
+  - Not covered yet: character/stage select already use phase 1; other
+    screens (sound test, name entry grid, tournament, etc.) still take
+    wheel/click only.
 
 ## Soccer
 

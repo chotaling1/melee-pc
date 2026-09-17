@@ -19,6 +19,7 @@
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/sislib.h>
+#include <melee/mn/mnmouse.h>
 
 #define NUM_STAGES 29
 
@@ -315,7 +316,7 @@ static void fn_80235F80(HSD_GObj* gobj)
     u8* confirmed;
 
     user_data = mnStageSw_804D6BF0->user_data;
-    buttons = mn_804A04F0.buttons = mn_80229624(4U);
+    buttons = mn_804A04F0.buttons = MN_MENU_INPUT();
     PAD_STACK(0x28);
     if (buttons & 0x20) {
         sfxBack();
@@ -808,3 +809,27 @@ void mnStageSw_80237410(void)
     proc = HSD_GObj_SetupProc(gobj, fn_80235F80, 0);
     proc->flags_3 = HSD_GObj_804D783C;
 }
+
+#ifdef MELEE_PC
+int mnStageSw_MouseRows(HSD_JObj** anchors, bool* enabled)
+{
+    MnStageSwData* data;
+    int i;
+    if (mnStageSw_804D6BF0 == NULL || mnStageSw_804D6BF4 != 0) {
+        return 0;
+    }
+    data = mnStageSw_804D6BF0->user_data;
+    for (i = 0; i < 29; i++) {
+        enabled[i] = gm_80164430(gm_801641CC(mnStageSw_803ED4C4[i])) != 0;
+        anchors[i] = enabled[i] ? mnStageSw_802364A0(data, (u8) i) : NULL;
+    }
+    return 29;
+}
+
+void mnStageSw_MouseHover(int row)
+{
+    u8* user_data = mnStageSw_804D6BF0->user_data;
+    mn_804A04F0.hovered_selection = row;
+    mn_804A04F0.confirmed_selection = user_data[row + 2];
+}
+#endif

@@ -30,6 +30,8 @@
 static SDL_Mutex* s_mutex;
 static float s_x, s_y;
 static bool s_moved;
+static u32 s_motion_serial;
+static Uint64 s_left_click_at; /* 0 = no unconsumed click */
 static bool s_used;
 static bool s_held[2];
 static Uint64 s_press_until[2];
@@ -100,6 +102,7 @@ void pc_mouse_event(const SDL_Event* e) {
         s_x = lx;
         s_y = ly;
         s_moved = true;
+        s_motion_serial++;
         unlock();
         return;
     }
@@ -116,6 +119,8 @@ void pc_mouse_event(const SDL_Event* e) {
         if (e->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             s_held[index] = true;
             s_press_until[index] = SDL_GetTicks() + MIN_PRESS_MS;
+            if (index == 0)
+                s_left_click_at = SDL_GetTicks();
         } else {
             s_held[index] = false;
         }
@@ -167,6 +172,31 @@ bool pc_mouse_take_motion(float* x, float* y) {
     *y = s_y;
     unlock();
     return moved;
+}
+
+/* Non-consuming position read for list menus: the serial changes on every
+ * mouse movement, so several readers can each notice a move. */
+u32 pc_mouse_get(float* x, float* y) {
+    u32 serial;
+    lock();
+    *x = s_x;
+    *y = s_y;
+    serial = s_motion_serial;
+    unlock();
+    return serial;
+}
+
+/* True once per left click, within a short window of the press, so a menu can
+ * tell a mouse click from a pad A press that arrives the same frame. */
+bool pc_mouse_take_left_click(void) {
+    bool clicked = false;
+    lock();
+    if (s_left_click_at != 0) {
+        clicked = SDL_GetTicks() - s_left_click_at < 250;
+        s_left_click_at = 0;
+    }
+    unlock();
+    return clicked;
 }
 
 bool pc_mouse_merge(PADStatus* st) {

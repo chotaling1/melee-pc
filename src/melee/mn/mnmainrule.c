@@ -20,6 +20,7 @@
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/sislib.h>
+#include <melee/mn/mnmouse.h>
 
 extern StaticModelDesc MenMainConTop_Top;
 extern StaticModelDesc MenMainCursor_Top;
@@ -174,7 +175,7 @@ void fn_8022F538(HSD_GObj* arg0)
     (void) U32_TO_F32;
 
     data = HSD_GObjGetUserData(mn_804D6BD0);
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
     if ((buttons & 0x200) != 0) {
         if (mn_804A04F0.hovered_selection == 5 ||
@@ -1583,3 +1584,33 @@ bool mn_80231F80(u8 arg0)
     }
     return true;
 }
+
+#ifdef MELEE_PC
+int mnMainRule_MouseRows(HSD_JObj** anchors, bool* enabled)
+{
+    union mn_802307F8_value_view* data;
+    int i;
+    if (mn_804D6BD0 == NULL) {
+        return 0;
+    }
+    data = HSD_GObjGetUserData(mn_804D6BD0);
+    for (i = 0; i < 7; i++) {
+        enabled[i] = !(gm_GetCurrentGameMode() == GM_TOURNAMENT && i == 4);
+        anchors[i] = enabled[i]
+                         ? data->fields.xC[mn_803EC600[(u8) mn_80230E38_CountVisible((u8) i)]]
+                         : NULL;
+    }
+    return 7;
+}
+
+void mnMainRule_MouseHover(int row)
+{
+    union mn_802307F8_value_view* data = HSD_GObjGetUserData(mn_804D6BD0);
+    mn_804A04F0.hovered_selection = row;
+    if (row == 1 && data->fields.x2 == 1) {
+        mn_804A04F0.confirmed_selection = data->fields.x9;
+    } else if (row < 7) {
+        mn_804A04F0.confirmed_selection = data->indexed.values[row];
+    }
+}
+#endif

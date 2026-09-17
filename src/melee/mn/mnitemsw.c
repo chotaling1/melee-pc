@@ -22,6 +22,7 @@
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/sislib.h>
+#include <melee/mn/mnmouse.h>
 
 u8 mnItemSw_804D6BEC;
 HSD_GObj* mnItemSw_804D6BE8;
@@ -224,7 +225,7 @@ void fn_80233E10(HSD_GObj* gobj)
     PAD_STACK(0x18);
 
     data = (MnItemSwData*) mnItemSw_804D6BE8->user_data;
-    buttons = mn_804A04F0.buttons = mn_80229624(4U);
+    buttons = mn_804A04F0.buttons = MN_MENU_INPUT();
     i = 0;
 
     if (buttons & MenuInput_Back) {
@@ -904,3 +905,39 @@ void mnItemSw_802358C0(void)
     proc = HSD_GObj_SetupProc(GObj_Create(0, 1, 0x80), fn_80233E10, 0);
     proc->flags_3 = HSD_GObj_804D783C;
 }
+
+#ifdef MELEE_PC
+/// Rows 0-30 are the items, row 31 the frequency setting.
+int mnItemSw_MouseRows(HSD_JObj** anchors, bool* enabled)
+{
+    MnItemSwData* data;
+    int i;
+    if (mnItemSw_804D6BE8 == NULL || mnItemSw_804D6BEC != 0) {
+        return 0;
+    }
+    data = mnItemSw_804D6BE8->user_data;
+    for (i = 0; i < 0x1F; i++) {
+        anchors[i] = mnItemSw_8023405C(data, (u8) i);
+        enabled[i] = anchors[i] != NULL;
+    }
+    anchors[0x1F] = data->jobjs[3];
+    enabled[0x1F] = anchors[0x1F] != NULL;
+    return 0x20;
+}
+
+void mnItemSw_MouseHover(int row)
+{
+    MnItemSwData* data = mnItemSw_804D6BE8->user_data;
+    if (row >= 0x1F) {
+        // The frequency row is 0x1F or 0x20 depending on the column it was
+        // reached from; keep whichever it already is.
+        if (mn_804A04F0.hovered_selection != 0x20) {
+            mn_804A04F0.hovered_selection = 0x1F;
+        }
+        mn_804A04F0.confirmed_selection = data->x21;
+        return;
+    }
+    mn_804A04F0.hovered_selection = row;
+    mn_804A04F0.confirmed_selection = data->items[row];
+}
+#endif

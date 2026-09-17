@@ -25,6 +25,7 @@
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/sislib.h>
+#include <melee/mn/mnmouse.h>
 
 extern StaticModelDesc MenMainConRl_Top;
 extern StaticModelDesc MenMainCursorRl_Top;
@@ -181,7 +182,7 @@ void fn_8023201C(HSD_GObj* gobj)
     u32 buttons;
     PAD_STACK(0x30);
 
-    buttons = mn_80229624(4);
+    buttons = MN_MENU_INPUT();
     mn_804A04F0.buttons = buttons;
 
     if (buttons & 0x200) {
@@ -1095,3 +1096,29 @@ void mn_802339FC(void)
                                (void (*)(HSD_GObj*)) fn_8023201C, 0U);
     think->flags_3 = HSD_GObj_804D783C;
 }
+
+#ifdef MELEE_PC
+int mnRulePlus_MouseRows(HSD_JObj** anchors, bool* enabled)
+{
+    MenuRulesPlusData* data;
+    int i;
+    if (mn_804D6BE0 == NULL) {
+        return 0;
+    }
+    data = mn_804D6BE0->user_data;
+    for (i = 0; i < 6; i++) {
+        enabled[i] = mnRulePlus_IsOptionVisible((u8) i) != 0;
+        anchors[i] = enabled[i]
+                         ? data->xC[mn_803ED1D0.x0[(u8) mnRulePlus_CountVisibleBefore((u8) i)]]
+                         : NULL;
+    }
+    return 6;
+}
+
+void mnRulePlus_MouseHover(int row)
+{
+    MenuRulesPlusData* data = mn_804D6BE0->user_data;
+    mn_804A04F0.hovered_selection = row;
+    mn_804A04F0.confirmed_selection = data->rule_values.values[row];
+}
+#endif
