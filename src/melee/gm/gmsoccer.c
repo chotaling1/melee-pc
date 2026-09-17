@@ -95,40 +95,49 @@ enum {
 };
 
 static SoccerParam params[P_COUNT] = {
-    { "goals_to_win", GM_SOCCER_GOALS_TO_WIN, "first side to this many goals wins" },
-    { "ball_percent", 40, "damage % the ball is reset to after every hit (higher = flies further)" },
-    { "launch_scale", 1.0F, "multiplier on launch speed from a hit" },
-    { "min_lift", 0.2F, "minimum upward speed when a grounded hit lifts the ball" },
-    { "gravity_scale", 1.0F, "multiplier on Mr. Saturn's gravity" },
-    { "max_fall_scale", 1.0F, "multiplier on Mr. Saturn's max fall speed" },
-    { "air_drag", 0.995F, "horizontal speed kept per frame in the air" },
-    { "bounce_keep", 0.6F, "vertical speed kept per floor bounce (0 = no bounce, 1 = perfect)" },
-    { "bounce_roll_keep", 0.85F, "horizontal speed kept per floor bounce" },
-    { "bounce_min_speed", 0.8F, "landing speed below which the ball stops bouncing and rolls" },
-    { "ground_friction", 0.02F, "speed lost per frame while rolling" },
-    { "ball_scale", 1.0F, "model size" },
-    { "ball_air_anim", -1, "Mr. Saturn animation in the air: -1 none (static pose), 0-3" },
-    { "ball_ground_anim", -1, "Mr. Saturn animation on the ground: -1 none, 0-3" },
-    { "ball_anim_speed", 1.0F, "animation playback speed" },
-    { "ball_radius", 0, "drawn ball radius; 0 = fit Mr. Saturn's hurtbox (the part you can hit)" },
-    { "draw_ball", 1, "draw the soccer ball model (0/1)" },
-    { "hide_saturn", 1, "hide Mr. Saturn's own model on the ball (0/1)" },
-    { "air_spin_keep", 0.99F, "spin rate kept per frame in the air" },
-    { "spawn_y", 40.0F, "kickoff drop height" },
-    { "respawn_delay", 90, "frames between a goal and the next kickoff" },
-    { "end_delay", 150, "frames between the winning goal and the end of the match" },
-    { "goal_line_x", 86.0F, "goal mouth distance from center (FD ledge is 85.57)" },
-    { "goal_back_x", 125.0F, "back of the net distance from center" },
-    { "goal_bottom_y", -40.0F, "bottom of the goal" },
-    { "goal_top_y", 35.0F, "crossbar height" },
-    { "show_goals", 1, "draw the goal frames and nets (0/1)" },
-    { "kickoff_countdown", 3, "seconds of 3-2-1 countdown before each kickoff (0 = drop the ball right away)" },
-    { "goal_banner_frames", 90, "frames the GOAL! banner stays up (the kickoff countdown replaces it)" },
-    { "goal_sfx", 0x13D, "sound played on a goal (317/318/319 are crowd reactions, 0 = none)" },
-    { "arena", 0, "soccer arena on Final Destination: 0 = open FD, 1 Classic Pitch, 2 Sky Box, 3 Wide Field, 4 Tiny Cage (goal_* keys are ignored in arenas)" },
+    [P_GOALS_TO_WIN] = { "goals_to_win", GM_SOCCER_GOALS_TO_WIN, "first side to this many goals wins" },
+    [P_BALL_PERCENT] = { "ball_percent", 40, "damage % the ball is reset to after every hit (higher = flies further)" },
+    [P_LAUNCH_SCALE] = { "launch_scale", 1.0F, "multiplier on launch speed from a hit" },
+    [P_MIN_LIFT] = { "min_lift", 0.2F, "minimum upward speed when a grounded hit lifts the ball" },
+    [P_GRAVITY_SCALE] = { "gravity_scale", 1.0F, "multiplier on Mr. Saturn's gravity" },
+    [P_MAX_FALL_SCALE] = { "max_fall_scale", 1.0F, "multiplier on Mr. Saturn's max fall speed" },
+    [P_AIR_DRAG] = { "air_drag", 0.995F, "horizontal speed kept per frame in the air" },
+    [P_BOUNCE_KEEP] = { "bounce_keep", 0.6F, "vertical speed kept per floor bounce (0 = no bounce, 1 = perfect)" },
+    [P_BOUNCE_ROLL_KEEP] = { "bounce_roll_keep", 0.85F, "horizontal speed kept per floor bounce" },
+    [P_BOUNCE_MIN_SPEED] = { "bounce_min_speed", 0.8F, "landing speed below which the ball stops bouncing and rolls" },
+    [P_GROUND_FRICTION] = { "ground_friction", 0.02F, "speed lost per frame while rolling" },
+    [P_BALL_SCALE] = { "ball_scale", 1.0F, "model size" },
+    [P_BALL_AIR_ANIM] = { "ball_air_anim", -1, "Mr. Saturn animation in the air: -1 none (static pose), 0-3" },
+    [P_BALL_GROUND_ANIM] = { "ball_ground_anim", -1, "Mr. Saturn animation on the ground: -1 none, 0-3" },
+    [P_BALL_ANIM_SPEED] = { "ball_anim_speed", 1.0F, "animation playback speed" },
+    [P_BALL_RADIUS] = { "ball_radius", 0, "drawn ball radius; 0 = fit Mr. Saturn's hurtbox (the part you can hit)" },
+    [P_DRAW_BALL] = { "draw_ball", 1, "draw the soccer ball model (0/1)" },
+    [P_HIDE_SATURN] = { "hide_saturn", 1, "hide Mr. Saturn's own model on the ball (0/1)" },
+    [P_AIR_SPIN_KEEP] = { "air_spin_keep", 0.99F, "spin rate kept per frame in the air" },
+    [P_SPAWN_Y] = { "spawn_y", 40.0F, "kickoff drop height" },
+    [P_RESPAWN_DELAY] = { "respawn_delay", 90, "frames between a goal and the next kickoff" },
+    [P_END_DELAY] = { "end_delay", 150, "frames between the winning goal and the end of the match" },
+    [P_GOAL_LINE_X] = { "goal_line_x", 86.0F, "goal mouth distance from center (FD ledge is 85.57)" },
+    [P_GOAL_BACK_X] = { "goal_back_x", 125.0F, "back of the net distance from center" },
+    [P_GOAL_BOTTOM_Y] = { "goal_bottom_y", -40.0F, "bottom of the goal" },
+    [P_GOAL_TOP_Y] = { "goal_top_y", 35.0F, "crossbar height" },
+    [P_SHOW_GOALS] = { "show_goals", 1, "draw the goal frames and nets (0/1)" },
+    [P_ARENA] = { "arena", 0, "soccer arena on Final Destination: 0 = open FD, 1 Classic Pitch, 2 Sky Box, 3 Wide Field, 4 Tiny Cage (goal_* keys are ignored in arenas)" },
+    [P_KICKOFF_COUNTDOWN] = { "kickoff_countdown", 3, "seconds of 3-2-1 countdown before each kickoff (0 = drop the ball right away)" },
+    [P_GOAL_BANNER_FRAMES] = { "goal_banner_frames", 90, "frames the GOAL! banner stays up (the kickoff countdown replaces it)" },
+    [P_GOAL_SFX] = { "goal_sfx", 0x13D, "sound played on a goal (317/318/319 are crowd reactions, 0 = none)" },
 };
 
 #define PARAM(id) (params[id].value)
+
+/// Every params[] slot must be named; catches a missed designated initializer.
+static void soccer_CheckParams(void)
+{
+    int i;
+    for (i = 0; i < P_COUNT; i++) {
+        HSD_ASSERT(__LINE__, params[i].key != NULL);
+    }
+}
 
 /// Out-of-play limits; the ball is reset without a goal past these.
 #define OUT_OF_PLAY_X 200.0F
@@ -216,6 +225,7 @@ static void soccer_WriteDefaultConfig(void)
 
 static void soccer_LoadConfig(void)
 {
+    soccer_CheckParams();
     static f32 defaults[P_COUNT];
     static bool have_defaults;
     char line[256];
