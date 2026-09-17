@@ -56,5 +56,7 @@ select screen.
   in the grid is the larger follow-up.
 - Order: one arena behind FD + Soccer on, then an arena kit (each field a
   small data table), then stage select.
-- Open questions for Chuck: drawn geometry OK for v1 vs modeled stages; slot
-  swap vs new icons.
+- Decided (Chuck, 2026-09-17): drawn geometry is fine for v1; the fields get
+  their own new stage select icons, in a row under Final Destination (like
+  pre-decomp Melee mods that added icons). No slot swapping.
+- Status: in progress 2026-09-17.
