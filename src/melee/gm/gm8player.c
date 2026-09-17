@@ -56,7 +56,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
 
     gm8p_active_count = 0;
 
-    OSReport("[8p] hook reached, enabled=%d\n",
+    pc_log_line("[8p] hook reached, enabled=%d\n",
              pc_is_eight_player_enabled() ? 1 : 0);
 
     if (!pc_is_eight_player_enabled()) {
@@ -74,7 +74,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
     }
 
     if (occupied == 0) {
-        OSReport("[8p] no players in the match, nothing to pad\n");
+        pc_log_line("[8p] no players in the match, nothing to pad\n");
         return;
     }
 
@@ -86,7 +86,10 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
         const PlayerInitData* donor = occupied_slot[i % occupied];
 
         *p = *donor;
-        p->slot = GM8P_EXTRA_BASE + i;
+        /* fn_8016D8AC derives player_id as slot - 1, and pltrick.c:341
+         * asserts player_id < 8 (the hit table packs it into an 8-bit mask).
+         * Ports 1-4 hold ids 0-3, so the extras take 4-7. */
+        p->slot = (u8) (GM8P_EXTRA_BASE - 1 + i);
         p->slot_type = Gm_PKind_Cpu;
         p->cpu_kind = 0;
         p->cpu_level = 5;
@@ -98,7 +101,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
     }
 
     gm8p_active_count = occupied + GM8P_EXTRA_COUNT;
-    OSReport("[8p] padded %d player(s) out to %d fighters (slots %d-%d)\n",
+    pc_log_line("[8p] padded %d player(s) out to %d fighters (slots %d-%d)\n",
              occupied, gm8p_active_count, GM8P_EXTRA_BASE,
              GM8P_EXTRA_BASE + GM8P_EXTRA_COUNT - 1);
 }
