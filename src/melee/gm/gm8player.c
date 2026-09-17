@@ -35,6 +35,14 @@ int gm8Player_ActiveCount(void)
     return gm8p_active_count;
 }
 
+int gm8Player_HudPlayerCount(int vanilla_count)
+{
+    /* StartMeleeRules::x0_3 carries the player count in 3 bits, so it cannot
+     * say 8. Rather than reflow that bitfield (its neighbours are packed to
+     * the retail byte layout), the HUD asks here instead. */
+    return gm8p_active_count != 0 ? gm8p_active_count : vanilla_count;
+}
+
 void gm8Player_ClearExtraSlots(StartMeleeData* start)
 {
     int i;

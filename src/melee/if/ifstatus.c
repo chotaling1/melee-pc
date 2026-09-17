@@ -386,7 +386,7 @@ void ifStatus_802F4EDC(HSD_GObj* gobj)
     {
         ptr = hud->players;
         jobj = gobj->hsd_obj;
-        for (i = 0; i < 6; ptr++, i++) {
+        for (i = 0; i < GM_MAX_PLAYERS; ptr++, i++) {
             if (ptr->HUD_parent_entity == gobj) {
                 state = hud->players + i;
                 goto found_player;
@@ -536,7 +536,7 @@ void ifStatus_802F4EDC(HSD_GObj* gobj)
 static inline IfDamageState* find_player_by_entity(HSD_GObj* gobj)
 {
     s32 i;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         if (ifStatus_GetHUDInfo()->players[i].HUD_parent_entity == gobj) {
             return &ifStatus_GetHUDInfo()->players[i];
         }
@@ -620,7 +620,7 @@ void ifStatus_802F5B48(HSD_GObj* gobj)
 static inline IfDamageState* getPlayerByHUDParent(HSD_GObj* parent)
 {
     s32 var_ctr;
-    for (var_ctr = 0; var_ctr < 6; var_ctr++) {
+    for (var_ctr = 0; var_ctr < GM_MAX_PLAYERS; var_ctr++) {
         if (ifStatus_GetHUDInfo()->players[var_ctr].HUD_parent_entity ==
             parent)
         {
@@ -640,7 +640,7 @@ void ifStatus_802F5DE0(HSD_GObj* player, s32 arg1)
 static inline IfDamageState* getPlayerByNext(HSD_GObj* gobj)
 {
     s32 i;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         if (ifStatus_GetHUDInfo()->players[i].next == gobj) {
             return &ifStatus_GetHUDInfo()->players[i];
         }
@@ -852,7 +852,7 @@ void ifStatus_802F665C(int arg0)
 
     ifAll_802F343C(arg0);
     ifStatus_804D6D60 = arg0;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         ifStatus_802F6508(i);
     }
 }
@@ -914,7 +914,7 @@ void ifStatus_802F6804(void)
     s32 i;
     IfDamageState* v;
 
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         v = &ifStatus_GetHUDInfo()->players[i & 0xFF];
         if (v->HUD_parent_entity != NULL) {
             HSD_GObjFree(v->HUD_parent_entity);
@@ -933,7 +933,7 @@ void ifStatus_802F6898(void)
 {
     s32 i;
     HudIndex* v = ifStatus_GetHUDInfo();
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         v->players[i].flags.hide_all_digits = 1;
     }
 }
@@ -943,7 +943,7 @@ void ifStatus_802F68F0(void)
 {
     s32 i;
     HudIndex* v = ifStatus_GetHUDInfo();
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         v->players[i].flags.hide_all_digits = 0;
     }
 }

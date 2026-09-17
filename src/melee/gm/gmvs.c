@@ -1,5 +1,7 @@
 #include "gmvs.h"
 
+#include "gm8player.h"
+
 #include <pc/pc.h>
 
 #include <Runtime/platform.h>
@@ -1745,10 +1747,6 @@ void fn_8016DCC0(StartMeleeData* arg0)
     case 2:
     case 3:
         for (i = 0; i < GM_MAX_PLAYERS; i++) {
-            pc_log_line("[8p] init slot %d: ckind=%d slot_type=%d slot=%d",
-                        (int) i, (int) arg0->players[i].ckind,
-                        (int) arg0->players[i].slot_type,
-                        (int) arg0->players[i].slot);
             fn_8016D8AC(i, &arg0->players[i]);
         }
         break;
@@ -2073,7 +2071,7 @@ void gm_Scene_Vs_OnEnter(void* arg0)
         ifStatus_802F6EA4(3, -1, -1, 0, (void*) fn_8016B7B4, fn_8016B7F8);
     }
     ifTime_CreateTimers();
-    ifStatus_802F665C(tmp->rules.x0_3);
+    ifStatus_802F665C(gm8Player_HudPlayerCount(tmp->rules.x0_3));
 }
 
 struct EndMeleeData {
@@ -2153,7 +2151,7 @@ void gm_Scene_SuddenDeath_OnEnter(void* user_data)
     fn_8016E730(data);
     ifStatus_802F6EA4(1, -1, -1, 0, (void*) fn_8016B7B4, fn_8016B7F8);
     ifTime_CreateTimers();
-    ifStatus_802F665C(data->rules.x0_3);
+    ifStatus_802F665C(gm8Player_HudPlayerCount(data->rules.x0_3));
 }
 
 void gm_Scene_Training_OnEnter(void* user_data)
@@ -2175,7 +2173,7 @@ void gm_Scene_Training_OnEnter(void* user_data)
         ifStatus_802F6EA4(8, -1, -1, 0, 0, fn_8016B784);
     }
     un_802FD428();
-    ifStatus_802F665C(data->rules.x0_3);
+    ifStatus_802F665C(gm8Player_HudPlayerCount(data->rules.x0_3));
     fn_8018A000();
 }
 

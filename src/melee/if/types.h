@@ -3,6 +3,7 @@
 
 #include <Runtime/platform.h>
 
+#include <melee/gm/forward.h>
 #include <melee/if/forward.h> // IWYU pragma: export
 #include <melee/sc/forward.h>
 #include <sysdolphin/baselib/forward.h>
@@ -43,7 +44,7 @@ struct IfDamageState {
 };
 
 struct HudIndex {
-    IfDamageState players[6];
+    IfDamageState players[GM_MAX_PLAYERS];
     /* +258 */ HSD_Joint* unk258;
     /* +25C */ void* jobj_desc_parent;
     /* +260 */ HSD_AnimJoint* janim_selection_joints;

@@ -30,7 +30,7 @@ static struct ifAll_804A0FD8_t {
     /* 0x04 */ HSD_GObj* gobj_2;
     /* 0x08 */ HSD_JObj* x8;
     /* 0x0C */ Vec3 xC;
-    /* 0x18 */ Vec3 x18[6];
+    /* 0x18 */ Vec3 x18[GM_MAX_PLAYERS];
     /* 0x60 */ Vec3 x60[3];
     /* 0x84 */ Vec3 x84[2];
 } ifAll_804A0FD8;
@@ -125,6 +125,33 @@ void ifAll_802F343C(int arg0)
             ifAll_802F343C_inline(i);
         }
         break;
+#ifdef MELEE_PC
+    /* PC (8-player VS): the HUD asset only carries bones for up to six
+     * players, so a seventh and eighth position have to be derived. Players
+     * 1-4 keep the vanilla four-player row and the rest stack directly above
+     * them. The row gap reuses the asset's own horizontal spacing rather than
+     * a magic screen offset, so it tracks whatever the HUD model provides. */
+    case 7:
+    case 8: {
+        f32 row_gap;
+
+        for (i = 0; i < 4; i++) {
+            lb_80011E24(jobj, &spC, i + 2, -1);
+            lb_8000B1CC(spC, NULL, &ifAll_804A0FD8.x18[i]);
+        }
+
+        row_gap = ifAll_804A0FD8.x18[1].x - ifAll_804A0FD8.x18[0].x;
+        if (row_gap < 0.0F) {
+            row_gap = -row_gap;
+        }
+
+        for (i = 4; i < arg0; i++) {
+            ifAll_804A0FD8.x18[i] = ifAll_804A0FD8.x18[i - 4];
+            ifAll_804A0FD8.x18[i].y += row_gap;
+        }
+        break;
+    }
+#endif
     }
 
     if (pc_get_hud_mode() == 1) {
