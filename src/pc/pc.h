@@ -66,6 +66,7 @@ bool pc_is_unlock_all_enabled(void);
 bool pc_is_frozen_stadium_enabled(void);
 bool pc_is_free_camera_enabled(void);
 bool pc_is_soccer_enabled(void);
+bool pc_is_eight_player_enabled(void);
 int pc_get_hud_mode(void);
 float pc_get_music_volume(void);
 float pc_get_sfx_volume(void);

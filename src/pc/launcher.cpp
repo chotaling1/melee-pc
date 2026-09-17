@@ -158,7 +158,7 @@ class Launcher final : public Rml::EventListener {
             return {"volume", "music-volume", "sfx-volume", "mute", "fps", "scale", "check-updates",
                 "check-now", "settings-discord"};
         case 2:
-            return {"unlock-all", "frozen-stadium", "free-camera", "soccer"};
+            return {"unlock-all", "frozen-stadium", "free-camera", "soccer", "eight-player"};
         default:
             return {};
         }
@@ -264,6 +264,7 @@ class Launcher final : public Rml::EventListener {
         text("frozen-stadium", prefs.frozen_stadium ? "Hazardless" : "Normal");
         text("free-camera", prefs.free_camera ? "Free" : "Normal");
         text("soccer", prefs.soccer ? "On" : "Off");
+        text("eight-player", prefs.eight_player ? "On" : "Off");
         text("unlock-all", prefs.unlock_all ? "Unlocked" : "Normal");
         text("backend", backend_name(prefs.backend));
         slider("volume", prefs.volume * 100.0f);
@@ -480,6 +481,11 @@ class Launcher final : public Rml::EventListener {
             save();
             refresh_settings();
             element("soccer")->Focus();
+        } else if (id == "eight-player") {
+            prefs.eight_player = !prefs.eight_player;
+            save();
+            refresh_settings();
+            element("eight-player")->Focus();
         } else if (id == "unlock-all") {
             prefs.unlock_all = !prefs.unlock_all;
             save();
@@ -1001,7 +1007,7 @@ public:
             return {"volume", "music-volume", "sfx-volume", "mute", "fps", "scale",
                 "port-check-update"};
         case 2:
-            return {"unlock-all", "frozen-stadium", "free-camera", "soccer"};
+            return {"unlock-all", "frozen-stadium", "free-camera", "soccer", "eight-player"};
         default: {
             std::vector<std::string> ids{"pad-port"};
             for (int i = 0; i < PAD_BUTTON_COUNT; ++i)
@@ -1109,6 +1115,7 @@ public:
         label("frozen-stadium", prefs.frozen_stadium ? "Hazardless" : "Normal");
         label("free-camera", prefs.free_camera ? "Free" : "Normal");
         label("soccer", prefs.soccer ? "On" : "Off");
+        label("eight-player", prefs.eight_player ? "On" : "Off");
         label("unlock-all", prefs.unlock_all ? "Unlocked" : "Normal");
         label("backend", backend_name(prefs.backend));
         slider("volume", prefs.volume * 100.0f);
@@ -1292,6 +1299,8 @@ public:
             prefs.free_camera = !prefs.free_camera;
         } else if (id == "soccer") {
             prefs.soccer = !prefs.soccer;
+        } else if (id == "eight-player") {
+            prefs.eight_player = !prefs.eight_player;
         } else if (id == "unlock-all") {
             prefs.unlock_all = !prefs.unlock_all;
         } else if (id == "backend") {
@@ -1613,6 +1622,9 @@ extern "C" bool pc_is_free_camera_enabled(void) {
 }
 extern "C" bool pc_is_soccer_enabled(void) {
     return prefs.soccer;
+}
+extern "C" bool pc_is_eight_player_enabled(void) {
+    return prefs.eight_player;
 }
 extern "C" int pc_get_hud_mode(void) {
     return prefs.hud_mode;

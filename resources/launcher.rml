@@ -120,6 +120,10 @@
               <div class="description"><h3>Soccer (mod)</h3><p>VS on Final Destination: hit the ball into a goal past the ledge. First to 3.</p></div>
               <button id="soccer">Off</button>
             </div>
+            <div class="setting">
+              <div class="description"><h3>8-player VS (mod, experimental)</h3><p>Fills a VS match out to 8 fighters with CPUs. Ports 1-4 play as normal.</p></div>
+              <button id="eight-player">Off</button>
+            </div>
           </div>
           <div id="page-audio" class="page">
             <div class="setting">

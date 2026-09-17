@@ -37,6 +37,7 @@ struct Preferences {
     bool frozen_stadium = false;
     bool free_camera = false;
     bool soccer = false;
+    bool eight_player = false;
     float music_volume = 1.0f;
     float sfx_volume = 1.0f;
 };

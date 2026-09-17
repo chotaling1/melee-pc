@@ -7,6 +7,7 @@
 #include "gm_unsplit.h"
 #include "gmmovieend.h"
 #include "gmresult.h"
+#include "gm8player.h"
 #include "gmsoccer.h"
 #include "gmvsmelee.h"
 #include "types.h"
@@ -217,6 +218,7 @@ void onExitSss(GameModeState* state)
 void onEnterVs(GameModeState* state)
 {
     gmVsMelee_EnterVs(state, gmVsMelee_GetVsData(), NULL, NULL);
+    gm8Player_ConfigureMatch(gm_GetGameModeStateEnterData(state));
     gmSoccer_ConfigureMatch(gm_GetGameModeStateEnterData(state));
 }
 
