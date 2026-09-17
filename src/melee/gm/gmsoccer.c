@@ -257,12 +257,20 @@ static void ball_GetShape(Item_GObj* gobj, Vec3* center, f32* radius)
 {
     Item* ip = GET_ITEM(gobj);
     f32 r = PARAM(P_BALL_RADIUS);
-    if (ip->xAC8_hurtboxNum > 0) {
+    if (ip->xAC8_hurtboxNum > 0 && ip->xACC_itemHurtbox[0].bone != NULL) {
         HurtCapsule* hurt = &ip->xACC_itemHurtbox[0];
-        f32 dx = hurt->b_pos.x - hurt->a_pos.x;
-        f32 dy = hurt->b_pos.y - hurt->a_pos.y;
-        center->x = 0.5F * (hurt->a_pos.x + hurt->b_pos.x);
-        center->y = 0.5F * (hurt->a_pos.y + hurt->b_pos.y);
+        Vec3 a, b;
+        f32 dx, dy;
+        // HurtCapsule::a_pos/b_pos are only refreshed while an attack is
+        // being tested against the item (lbcollision.c), so they go stale
+        // between hits. Resolve the capsule from its bone every time, as the
+        // collision code does.
+        lb_8000B1CC(hurt->bone, &hurt->a_offset, &a);
+        lb_8000B1CC(hurt->bone, &hurt->b_offset, &b);
+        dx = b.x - a.x;
+        dy = b.y - a.y;
+        center->x = 0.5F * (a.x + b.x);
+        center->y = 0.5F * (a.y + b.y);
         center->z = 0.0F;
         if (r <= 0.0F) {
             r = hurt->scale * ip->scl + 0.5F * sqrtf(dx * dx + dy * dy);
