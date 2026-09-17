@@ -22,6 +22,13 @@ set(AURORA_ENABLE_DVD ON CACHE BOOL "" FORCE)
 set(AURORA_ENABLE_CARD ON CACHE BOOL "" FORCE)
 set(AURORA_ENABLE_THP ON CACHE BOOL "" FORCE)
 set(AURORA_ENABLE_RMLUI ON CACHE BOOL "" FORCE)
+# MinGW's PE linker binds weak definitions (OSReport/OSVReport/OSPanic in
+# src/pc/os.c, weak via aurora's dolphin/os.h) to address 0 when other
+# objects only hold weak references, so the first OSReport call jumps to 0.
+# COFF has no reliable weak-definition semantics; make DECL_WEAK a no-op.
+if (MINGW)
+    add_compile_definitions(DECL_WEAK=)
+endif ()
 add_subdirectory(extern/aurora EXCLUDE_FROM_ALL)
 if (WIN32)
     set(MELEE_CRYPTO_LIBS bcrypt)
