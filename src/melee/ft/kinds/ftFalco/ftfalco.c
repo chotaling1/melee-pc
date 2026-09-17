@@ -480,7 +480,10 @@ void ftFc_Init_OnLoad(HSD_GObj* gobj)
     sa2 = fp->dat_attrs;
     it_8026B3F8(DP(Article, items[0].v), sa2->x1C_FOX_BLASTER_SHOT_ITKIND);
     it_8026B3F8(DP(Article, items[1].v), sa2->x20_FOX_BLASTER_GUN_ITKIND);
-    it_8026B3F8(DP(Article, items[2].v), It_Kind_Falco_Phantasm);
+    // Falco's item list is { shot, gun, NULL, phantasm, ... } on the disc
+    // (PlFc.dat ftDataFalco x48_items), unlike Fox's { shot, gun, illusion }.
+    // items[2] registered a NULL article and crashed the first side B.
+    it_8026B3F8(DP(Article, items[3].v), It_Kind_Falco_Phantasm);
     fp->u.fx.x222C_blasterGObj = NULL;
 }
 
