@@ -59,4 +59,5 @@ select screen.
 - Decided (Chuck, 2026-09-17): drawn geometry is fine for v1; the fields get
   their own new stage select icons, in a row under Final Destination (like
   pre-decomp Melee mods that added icons). No slot swapping.
-- Status: in progress 2026-09-17.
+- Status 2026-09-17: gameplay (collision, points, drawing; 4 arenas) done and
+  confirmed; stage select icon row built, awaiting test.
