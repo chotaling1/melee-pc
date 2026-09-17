@@ -2,6 +2,7 @@
 
 #include <placeholder.h>
 
+#include <dolphin/gx.h>
 #include <dolphin/os.h>
 
 #include <melee/cm/camera.h>
@@ -21,51 +22,96 @@
 #include <melee/it/kinds/itdosei.h>
 #include <melee/it/kinds/types.h>
 #include <melee/it/types.h>
+#include <melee/lb/lb_00B0.h>
+#include <melee/lb/lbcollision.h>
 #include <melee/mn/types.h>
 #include <melee/pl/player.h>
 #include <sysdolphin/baselib/gobj.h>
+#include <sysdolphin/baselib/gobjgxlink.h>
 #include <sysdolphin/baselib/gobjproc.h>
+#include <sysdolphin/baselib/jobj.h>
 
 #include "pc/pc.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
-/* ---- tuning ---------------------------------------------------------- */
+/* ---- tuning ----------------------------------------------------------
+ * Every value can be overridden from soccer.cfg next to melee.exe, which is
+ * re-read at the start of each soccer match (and written with these defaults
+ * if missing). Each hit, bounce-to-roll change, goal and kickoff is logged to
+ * soccer.log in the same folder. */
 
-/// Damage the ball always sits at when hit. Items take knockback like
-/// fighters (itcoll.c), so this sets how far every hit sends it; resetting it
-/// after each hit keeps long rallies from launching the ball ever harder.
-#define BALL_PERCENT 40
-/// Extra multiplier on the launch speed from the hit's knockback.
-#define BALL_LAUNCH_SCALE 1.0F
-/// Minimum upward speed when a grounded hit lifts the ball.
-#define BALL_MIN_LIFT 0.2F
-/// Fraction of vertical speed kept when bouncing off the floor.
-#define BALL_BOUNCE_KEEP 0.6F
-/// Fraction of horizontal speed kept on each floor bounce.
-#define BALL_BOUNCE_ROLL_KEEP 0.85F
-/// Landings slower than this stop bouncing and start rolling.
-#define BALL_BOUNCE_MIN_SPEED 0.8F
-/// Horizontal air drag per frame.
-#define BALL_AIR_DRAG 0.995F
-/// Ground friction per frame (units/frame^2).
-#define BALL_GROUND_FRICTION 0.02F
-#define BALL_LIFETIME 1000000.0F
+#define SOCCER_CFG_PATH "soccer.cfg"
+#define SOCCER_LOG_PATH "soccer.log"
 
-#define BALL_SPAWN_X 0.0F
-#define BALL_SPAWN_Y 40.0F
-/// Frames between a goal (or a lost ball) and the next kickoff.
-#define RESPAWN_DELAY 90
-/// Frames between the winning goal and the end of the match.
-#define END_DELAY 150
+typedef struct SoccerParam {
+    const char* key;
+    f32 value;
+    const char* help;
+} SoccerParam;
 
-/* Final Destination: floor edges at x = +-85.5657 (y = 0). A goal is the box
- * just past each ledge; balls that sail over the crossbar or out past the
- * back of the net only reset. */
-#define GOAL_LINE_X 86.0F
-#define GOAL_BACK_X 125.0F
-#define GOAL_BOTTOM_Y -40.0F
-#define GOAL_TOP_Y 35.0F
+enum {
+    P_GOALS_TO_WIN,
+    P_BALL_PERCENT,
+    P_LAUNCH_SCALE,
+    P_MIN_LIFT,
+    P_GRAVITY_SCALE,
+    P_MAX_FALL_SCALE,
+    P_AIR_DRAG,
+    P_BOUNCE_KEEP,
+    P_BOUNCE_ROLL_KEEP,
+    P_BOUNCE_MIN_SPEED,
+    P_GROUND_FRICTION,
+    P_BALL_SCALE,
+    P_BALL_AIR_ANIM,
+    P_BALL_GROUND_ANIM,
+    P_BALL_ANIM_SPEED,
+    P_ROLL_RADIUS,
+    P_AIR_SPIN_KEEP,
+    P_SPAWN_Y,
+    P_RESPAWN_DELAY,
+    P_END_DELAY,
+    P_GOAL_LINE_X,
+    P_GOAL_BACK_X,
+    P_GOAL_BOTTOM_Y,
+    P_GOAL_TOP_Y,
+    P_SHOW_GOALS,
+    P_COUNT,
+};
+
+static SoccerParam params[P_COUNT] = {
+    { "goals_to_win", GM_SOCCER_GOALS_TO_WIN, "first side to this many goals wins" },
+    { "ball_percent", 40, "damage % the ball is reset to after every hit (higher = flies further)" },
+    { "launch_scale", 1.0F, "multiplier on launch speed from a hit" },
+    { "min_lift", 0.2F, "minimum upward speed when a grounded hit lifts the ball" },
+    { "gravity_scale", 1.0F, "multiplier on Mr. Saturn's gravity" },
+    { "max_fall_scale", 1.0F, "multiplier on Mr. Saturn's max fall speed" },
+    { "air_drag", 0.995F, "horizontal speed kept per frame in the air" },
+    { "bounce_keep", 0.6F, "vertical speed kept per floor bounce (0 = no bounce, 1 = perfect)" },
+    { "bounce_roll_keep", 0.85F, "horizontal speed kept per floor bounce" },
+    { "bounce_min_speed", 0.8F, "landing speed below which the ball stops bouncing and rolls" },
+    { "ground_friction", 0.02F, "speed lost per frame while rolling" },
+    { "ball_scale", 1.0F, "model size" },
+    { "ball_air_anim", -1, "Mr. Saturn animation in the air: -1 none (static pose), 0-3" },
+    { "ball_ground_anim", -1, "Mr. Saturn animation on the ground: -1 none, 0-3" },
+    { "ball_anim_speed", 1.0F, "animation playback speed" },
+    { "roll_radius", 4.0F, "rolling radius for spin (smaller = spins faster, 0 = no spin)" },
+    { "air_spin_keep", 0.99F, "spin rate kept per frame in the air" },
+    { "spawn_y", 40.0F, "kickoff drop height" },
+    { "respawn_delay", 90, "frames between a goal and the next kickoff" },
+    { "end_delay", 150, "frames between the winning goal and the end of the match" },
+    { "goal_line_x", 86.0F, "goal mouth distance from center (FD ledge is 85.57)" },
+    { "goal_back_x", 125.0F, "back of the net distance from center" },
+    { "goal_bottom_y", -40.0F, "bottom of the goal" },
+    { "goal_top_y", 35.0F, "crossbar height" },
+    { "show_goals", 1, "draw the goal frames and nets (0/1)" },
+};
+
+#define PARAM(id) (params[id].value)
+
+/// Out-of-play limits; the ball is reset without a goal past these.
 #define OUT_OF_PLAY_X 200.0F
 #define OUT_OF_PLAY_Y -120.0F
 
@@ -90,7 +136,89 @@ static struct {
     int end_timer;
     s8 side[4]; ///< goal each player defends, by starting position
     f32 pre_coll_vel_y;
+    f32 roll;      ///< ball rotation around the camera axis (radians)
+    f32 spin_rate; ///< radians/frame, carried into the air
+    u32 frame;
+    u32 draw_passes_seen;
+    FILE* log;
 } soccer;
+
+/* ---- log + config ---------------------------------------------------- */
+
+static void soccer_Log(const char* fmt, ...)
+{
+    va_list args;
+    char buf[256];
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    OSReport("[soccer] f%u %s\n", soccer.frame, buf);
+    if (soccer.log != NULL) {
+        fprintf(soccer.log, "f%u %s\n", soccer.frame, buf);
+        fflush(soccer.log);
+    }
+}
+
+static void soccer_WriteDefaultConfig(void)
+{
+    int i;
+    FILE* f = fopen(SOCCER_CFG_PATH, "w");
+    if (f == NULL) {
+        return;
+    }
+    fprintf(f, "# Soccer mod tuning. Edit and start a new match to apply.\n"
+               "# Distances are in stage units (FD's stage is 171 wide).\n"
+               "# Delete this file to restore the defaults.\n\n");
+    for (i = 0; i < P_COUNT; i++) {
+        fprintf(f, "# %s\n%s = %g\n\n", params[i].help, params[i].key,
+                params[i].value);
+    }
+    fclose(f);
+}
+
+static void soccer_LoadConfig(void)
+{
+    static f32 defaults[P_COUNT];
+    static bool have_defaults;
+    char line[256];
+    FILE* f;
+    int k;
+
+    // Start from the built-in values so a removed key falls back to them.
+    for (k = 0; k < P_COUNT; k++) {
+        if (!have_defaults) {
+            defaults[k] = params[k].value;
+        }
+        params[k].value = defaults[k];
+    }
+    have_defaults = true;
+
+    f = fopen(SOCCER_CFG_PATH, "r");
+    if (f == NULL) {
+        soccer_WriteDefaultConfig();
+        return;
+    }
+    while (fgets(line, sizeof(line), f) != NULL) {
+        char key[64];
+        float value;
+        int i;
+        if (line[0] == '#' ||
+            sscanf(line, " %63[a-z_] = %f", key, &value) != 2)
+        {
+            continue;
+        }
+        for (i = 0; i < P_COUNT; i++) {
+            if (strcmp(key, params[i].key) == 0) {
+                params[i].value = value;
+                break;
+            }
+        }
+        if (i == P_COUNT) {
+            soccer_Log("config: unknown key '%s'", key);
+        }
+    }
+    fclose(f);
+}
 
 /* ---- ball item ------------------------------------------------------- */
 
@@ -105,13 +233,27 @@ static void ball_KeepHarmless(Item_GObj* gobj)
         it_802725D4(gobj);
     }
     ip->xDC8_word.flags.x15 = 0;
-    ip->xD44_lifeTimer = BALL_LIFETIME;
+    ip->xD44_lifeTimer = 1000000.0F;
     ip->owner = NULL;
 }
 
 static bool ball_Anim(Item_GObj* gobj)
 {
+    Item* ip = GET_ITEM(gobj);
+    f32 radius = PARAM(P_ROLL_RADIUS) * PARAM(P_BALL_SCALE);
+
     ball_KeepHarmless(gobj);
+    if (radius > 0.0F) {
+        if (ip->ground_or_air == GA_Ground) {
+            // Rolling without slipping: moving right turns clockwise as seen
+            // by the camera, i.e. negative rotation around Z.
+            soccer.spin_rate = -ip->x40_vel.x / radius;
+        } else {
+            soccer.spin_rate *= PARAM(P_AIR_SPIN_KEEP);
+        }
+        soccer.roll += soccer.spin_rate;
+        HSD_JObjSetRotationZ(GET_JOBJ(gobj), soccer.roll);
+    }
     return false;
 }
 
@@ -119,20 +261,23 @@ static void ball_AirPhys(Item_GObj* gobj)
 {
     Item* ip = GET_ITEM(gobj);
     ItemAttr* attrs = ip->xCC_item_attr;
-    it_80272860(gobj, attrs->x10_fall_speed, attrs->x14_fall_speed_max);
-    ip->x40_vel.x *= BALL_AIR_DRAG;
+    it_80272860(gobj, attrs->x10_fall_speed * PARAM(P_GRAVITY_SCALE),
+                attrs->x14_fall_speed_max * PARAM(P_MAX_FALL_SCALE));
+    ip->x40_vel.x *= PARAM(P_AIR_DRAG);
 }
 
 static void ball_Landed(Item_GObj* gobj)
 {
     Item* ip = GET_ITEM(gobj);
     f32 fall = -soccer.pre_coll_vel_y;
-    if (fall > BALL_BOUNCE_MIN_SPEED) {
-        ip->x40_vel.y = fall * BALL_BOUNCE_KEEP;
-        ip->x40_vel.x *= BALL_BOUNCE_ROLL_KEEP;
+    if (fall > PARAM(P_BOUNCE_MIN_SPEED)) {
+        ip->x40_vel.y = fall * PARAM(P_BOUNCE_KEEP);
+        ip->x40_vel.x *= PARAM(P_BOUNCE_ROLL_KEEP);
         it_802762BC(ip);
         return;
     }
+    soccer_Log("rolling at (%.1f, %.1f) vx %.2f", ip->pos.x, ip->pos.y,
+               ip->x40_vel.x);
     ip->x40_vel.y = 0.0F;
     ball_EnterGround(gobj);
 }
@@ -147,11 +292,12 @@ static bool ball_AirColl(Item_GObj* gobj)
 static void ball_GroundPhys(Item_GObj* gobj)
 {
     Item* ip = GET_ITEM(gobj);
+    f32 friction = PARAM(P_GROUND_FRICTION);
     f32 vx = ip->x40_vel.x;
-    if (vx > BALL_GROUND_FRICTION) {
-        vx -= BALL_GROUND_FRICTION;
-    } else if (vx < -BALL_GROUND_FRICTION) {
-        vx += BALL_GROUND_FRICTION;
+    if (vx > friction) {
+        vx -= friction;
+    } else if (vx < -friction) {
+        vx += friction;
     } else {
         vx = 0.0F;
     }
@@ -166,24 +312,32 @@ static bool ball_GroundColl(Item_GObj* gobj)
 }
 
 static ItemStateTable ball_states[] = {
-    /* BALL_MS_AIR */ { 3, ball_Anim, ball_AirPhys, ball_AirColl },
+    /* BALL_MS_AIR */ { -1, ball_Anim, ball_AirPhys, ball_AirColl },
     /* BALL_MS_GROUND */ { -1, ball_Anim, ball_GroundPhys, ball_GroundColl },
 };
 
-static void ball_EnterAir(Item_GObj* gobj)
+static void ball_SetState(Item_GObj* gobj, int msid)
 {
     Item* ip = GET_ITEM(gobj);
-    it_802762BC(ip);
-    Item_80268E5C(gobj, BALL_MS_AIR, ITEM_ANIM_UPDATE);
+    HSD_JObj* jobj = GET_JOBJ(gobj);
+    Item_80268E5C(gobj, msid, ITEM_ANIM_UPDATE);
+    ip->x5D0_animFrameSpeed = PARAM(P_BALL_ANIM_SPEED);
+    lb_8000BA0C(jobj, ip->x5D0_animFrameSpeed);
+    // The state change re-applies the facing rotation; keep the roll.
+    HSD_JObjSetRotationZ(jobj, soccer.roll);
     ball_KeepHarmless(gobj);
+}
+
+static void ball_EnterAir(Item_GObj* gobj)
+{
+    it_802762BC(GET_ITEM(gobj));
+    ball_SetState(gobj, BALL_MS_AIR);
 }
 
 static void ball_EnterGround(Item_GObj* gobj)
 {
-    Item* ip = GET_ITEM(gobj);
-    it_802762B0(ip);
-    Item_80268E5C(gobj, BALL_MS_GROUND, ITEM_ANIM_UPDATE);
-    ball_KeepHarmless(gobj);
+    it_802762B0(GET_ITEM(gobj));
+    ball_SetState(gobj, BALL_MS_GROUND);
 }
 
 static bool ball_DmgReceived(Item_GObj* gobj)
@@ -191,17 +345,20 @@ static bool ball_DmgReceived(Item_GObj* gobj)
     Item* ip = GET_ITEM(gobj);
     // Read the hit before the state change clears xCC8_knockback.
     bool lifted = it_8027B798(gobj, &ip->x40_vel);
-    ip->x40_vel.x *= BALL_LAUNCH_SCALE;
-    ip->x40_vel.y *= BALL_LAUNCH_SCALE;
+    ip->x40_vel.x *= PARAM(P_LAUNCH_SCALE);
+    ip->x40_vel.y *= PARAM(P_LAUNCH_SCALE);
     ip->x40_vel.z = 0.0F;
-    OSReport("[soccer] hit by P%d: kb %.1f angle %d dmg %d -> vel (%.2f, %.2f)"
-             " at (%.1f, %.1f)\n",
-             ip->xCB0_source_ply + 1, ip->xCC8_knockback, ip->xCAC_angle,
-             ip->xCA0, ip->x40_vel.x, ip->x40_vel.y, ip->pos.x, ip->pos.y);
-    ip->xC9C = BALL_PERCENT;
+    soccer_Log("hit by P%d: kb %.1f angle %d dmg %d %s -> vel (%.2f, %.2f) "
+               "at (%.1f, %.1f)",
+               ip->xCB0_source_ply + 1, ip->xCC8_knockback, ip->xCAC_angle,
+               ip->xCA0, ip->ground_or_air == GA_Air ? "air" : "ground",
+               ip->x40_vel.x, ip->x40_vel.y, ip->pos.x, ip->pos.y);
+    ip->xC9C = (s32) PARAM(P_BALL_PERCENT);
     if (ip->ground_or_air == GA_Air || lifted) {
-        if (ip->ground_or_air == GA_Ground && ip->x40_vel.y < BALL_MIN_LIFT) {
-            ip->x40_vel.y = BALL_MIN_LIFT;
+        if (ip->ground_or_air == GA_Ground &&
+            ip->x40_vel.y < PARAM(P_MIN_LIFT))
+        {
+            ip->x40_vel.y = PARAM(P_MIN_LIFT);
         }
         ball_EnterAir(gobj);
     } else {
@@ -243,14 +400,14 @@ static Item_GObj* ball_Spawn(void)
 
     memset(&spawn, 0, sizeof(spawn));
     spawn.kind = It_Kind_Dosei;
-    spawn.pos.x = BALL_SPAWN_X;
-    spawn.pos.y = BALL_SPAWN_Y;
+    spawn.pos.x = 0.0F;
+    spawn.pos.y = PARAM(P_SPAWN_Y);
     spawn.prev_pos = spawn.pos;
     spawn.facing_dir = 1.0F;
     spawn.x44_flag.b0 = 1;
     gobj = Item_80268B18(&spawn);
     if (gobj == NULL) {
-        OSReport("[soccer] ball spawn failed\n");
+        soccer_Log("ball spawn failed");
         return NULL;
     }
     // Mr. Saturn's own spawn callback has run; from here on this instance
@@ -258,12 +415,68 @@ static Item_GObj* ball_Spawn(void)
     ip = GET_ITEM(gobj);
     ip->xB8_itemLogicTable = &ball_logic;
     ip->xBC_itemStateContainer = ball_states;
-    ip->xC9C = BALL_PERCENT;
+    ip->xC9C = (s32) PARAM(P_BALL_PERCENT);
     itResetVelocity(ip);
+    soccer.roll = 0.0F;
+    soccer.spin_rate = 0.0F;
+    it_80274484(gobj, GET_JOBJ(gobj), PARAM(P_BALL_SCALE));
     ball_EnterAir(gobj);
-    OSReport("[soccer] kickoff, score %d-%d\n", soccer.score[SIDE_LEFT],
-             soccer.score[SIDE_RIGHT]);
+    soccer_Log("kickoff, score %d-%d (base gravity %.3f, max fall %.2f)",
+               soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT],
+               ip->xCC_item_attr->x10_fall_speed,
+               ip->xCC_item_attr->x14_fall_speed_max);
     return gobj;
+}
+
+/* ---- goals ----------------------------------------------------------- */
+
+static void goal_Rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, GXColor* clr)
+{
+    Vec3 v0, v1;
+    v0.x = x0 < x1 ? x0 : x1;
+    v1.x = x0 < x1 ? x1 : x0;
+    v0.y = y0 < y1 ? y0 : y1;
+    v1.y = y0 < y1 ? y1 : y0;
+    v0.z = v1.z = z;
+    lbColl_80009DD4(&v0, &v1, clr);
+}
+
+/// Draws both goals: a translucent net in the team color and a white frame.
+/// Pass 0 is the opaque pass and pass 2 the translucent one, as for the
+/// game's own hitbox display (lbColl_80009F54).
+static void soccer_DrawGoals(HSD_GObj* gobj, int pass)
+{
+    static GXColor nets[2] = { { 0xE0, 0x30, 0x30, 0x60 },
+                               { 0x30, 0x60, 0xF0, 0x60 } };
+    static GXColor frame = { 0xFF, 0xFF, 0xFF, 0xFF };
+    f32 line = PARAM(P_GOAL_LINE_X);
+    f32 back = PARAM(P_GOAL_BACK_X);
+    f32 bottom = PARAM(P_GOAL_BOTTOM_Y);
+    f32 top = PARAM(P_GOAL_TOP_Y);
+    const f32 bar = 1.5F;
+    int side;
+
+    if (!soccer.active || PARAM(P_SHOW_GOALS) == 0.0F) {
+        return;
+    }
+    if (pass >= 0 && pass < 8 && !(soccer.draw_passes_seen & (1 << pass))) {
+        soccer.draw_passes_seen |= 1 << pass;
+        soccer_Log("goal draw pass %d", pass);
+    }
+    for (side = SIDE_LEFT; side <= SIDE_RIGHT; side++) {
+        f32 s = side == SIDE_LEFT ? -1.0F : 1.0F;
+        if (pass == 2) {
+            goal_Rect(s * line, bottom, s * back, top, -6.0F, &nets[side]);
+        } else if (pass == 0) {
+            // posts at the goal line and the back of the net, crossbar, base
+            goal_Rect(s * line, bottom, s * (line + bar), top + bar, 1.0F,
+                      &frame);
+            goal_Rect(s * (back - bar), bottom, s * back, top + bar, 1.0F,
+                      &frame);
+            goal_Rect(s * line, top, s * back, top + bar, 1.0F, &frame);
+            goal_Rect(s * line, bottom, s * back, bottom + bar, 1.0F, &frame);
+        }
+    }
 }
 
 /* ---- match ----------------------------------------------------------- */
@@ -284,8 +497,8 @@ static void soccer_AssignSides(void)
         }
         soccer.side[i] =
             GET_FIGHTER(gobj)->cur_pos.x < 0.0F ? SIDE_LEFT : SIDE_RIGHT;
-        OSReport("[soccer] P%d defends the %s goal\n", i + 1,
-                 soccer.side[i] == SIDE_LEFT ? "left" : "right");
+        soccer_Log("P%d defends the %s goal", i + 1,
+                   soccer.side[i] == SIDE_LEFT ? "left" : "right");
         any = true;
     }
     soccer.sides_assigned = any;
@@ -294,20 +507,20 @@ static void soccer_AssignSides(void)
 static void soccer_Goal(int scoring_side, Vec3* pos)
 {
     soccer.score[scoring_side]++;
-    OSReport("[soccer] GOAL for %s at (%.1f, %.1f): %d-%d\n",
-             scoring_side == SIDE_LEFT ? "left" : "right", pos->x, pos->y,
-             soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
+    soccer_Log("GOAL for %s at (%.1f, %.1f): %d-%d",
+               scoring_side == SIDE_LEFT ? "left" : "right", pos->x, pos->y,
+               soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
     Camera_RequestQuake(QuakeKind_Small, pos);
-    if (soccer.score[scoring_side] >= GM_SOCCER_GOALS_TO_WIN) {
+    if (soccer.score[scoring_side] >= (int) PARAM(P_GOALS_TO_WIN)) {
         soccer.finished = true;
-        soccer.end_timer = END_DELAY;
-        OSReport("[soccer] %s side wins\n",
-                 scoring_side == SIDE_LEFT ? "left" : "right");
+        soccer.end_timer = (int) PARAM(P_END_DELAY);
+        soccer_Log("%s side wins", scoring_side == SIDE_LEFT ? "left" : "right");
     }
 }
 
 static void soccer_Think(HSD_GObj* unused)
 {
+    soccer.frame++;
     if (!soccer.sides_assigned) {
         soccer_AssignSides();
     }
@@ -323,20 +536,21 @@ static void soccer_Think(HSD_GObj* unused)
         Item* ip = GET_ITEM(soccer.ball);
         Vec3 pos = ip->pos;
         f32 ax = ABS(pos.x);
-        bool in_goal = ax > GOAL_LINE_X && ax < GOAL_BACK_X &&
-                       pos.y > GOAL_BOTTOM_Y && pos.y < GOAL_TOP_Y;
+        bool in_goal = ax > PARAM(P_GOAL_LINE_X) &&
+                       ax < PARAM(P_GOAL_BACK_X) &&
+                       pos.y > PARAM(P_GOAL_BOTTOM_Y) &&
+                       pos.y < PARAM(P_GOAL_TOP_Y);
         bool out = ax > OUT_OF_PLAY_X || pos.y < OUT_OF_PLAY_Y;
         if (in_goal || out) {
             if (in_goal && !soccer.finished) {
                 // A ball in the left goal scores for the right side.
                 soccer_Goal(pos.x < 0.0F ? SIDE_RIGHT : SIDE_LEFT, &pos);
             } else if (out) {
-                OSReport("[soccer] ball out of play at (%.1f, %.1f)\n", pos.x,
-                         pos.y);
+                soccer_Log("ball out of play at (%.1f, %.1f)", pos.x, pos.y);
             }
             Item_8026A8EC(soccer.ball);
             soccer.ball = NULL;
-            soccer.respawn_timer = RESPAWN_DELAY;
+            soccer.respawn_timer = (int) PARAM(P_RESPAWN_DELAY);
         }
         return;
     }
@@ -349,24 +563,45 @@ static void soccer_Think(HSD_GObj* unused)
         return;
     }
     soccer.ball = ball_Spawn();
-    soccer.respawn_timer = RESPAWN_DELAY;
+    soccer.respawn_timer = (int) PARAM(P_RESPAWN_DELAY);
 }
 
 static void soccer_OnMatchStart(void)
 {
+    HSD_GObj* gobj;
+    int i;
+
+    if (soccer.log != NULL) {
+        fclose(soccer.log);
+    }
     memset(&soccer, 0, sizeof(soccer));
+    soccer.log = fopen(SOCCER_LOG_PATH, "w");
+    soccer_LoadConfig();
     soccer.active = true;
     soccer.respawn_timer = 60;
-    OSReport("[soccer] match start, first to %d\n", GM_SOCCER_GOALS_TO_WIN);
-    HSD_GObj_SetupProc(GObj_Create(0xF, 0x11, 0), soccer_Think, 0x15);
+    ball_states[BALL_MS_AIR].anim_id = (enum_t) PARAM(P_BALL_AIR_ANIM);
+    ball_states[BALL_MS_GROUND].anim_id = (enum_t) PARAM(P_BALL_GROUND_ANIM);
+
+    soccer_Log("match start");
+    for (i = 0; i < P_COUNT; i++) {
+        soccer_Log("  %s = %g", params[i].key, params[i].value);
+    }
+
+    gobj = GObj_Create(0xF, 0x11, 0);
+    HSD_GObj_SetupProc(gobj, soccer_Think, 0x15);
+    GObj_SetupGXLink(gobj, soccer_DrawGoals, 6, 0);
 }
 
 static void soccer_OnMatchEnd(u8 outcome)
 {
-    OSReport("[soccer] match end (outcome %d), final score %d-%d\n", outcome,
-             soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
+    soccer_Log("match end (outcome %d), final score %d-%d", outcome,
+               soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
     soccer.active = false;
     soccer.ball = NULL;
+    if (soccer.log != NULL) {
+        fclose(soccer.log);
+        soccer.log = NULL;
+    }
 }
 
 void gmSoccer_ConfigureMatch(StartMeleeData* start)
@@ -379,7 +614,9 @@ void gmSoccer_ConfigureMatch(StartMeleeData* start)
         OSReport("[soccer] enabled, but the stage is not Final Destination\n");
         return;
     }
-    if (start->rules.on_match_start != NULL || start->rules.on_match_end != NULL) {
+    if (start->rules.on_match_start != NULL ||
+        start->rules.on_match_end != NULL)
+    {
         return;
     }
     start->rules.on_match_start = soccer_OnMatchStart;
