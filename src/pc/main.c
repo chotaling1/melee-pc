@@ -175,6 +175,35 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* info) {
             describe_addr(frames[f], where, sizeof(where));
             fprintf(s, "[FATAL]   #%02u %s\n", (unsigned)f, where);
         }
+#ifdef _M_X64
+        /* The trace above starts inside this handler and stops at the
+         * dispatcher when the fault is a call through a null or wild
+         * function pointer, which loses the only frames that matter. Unwind
+         * from the faulting context instead. */
+        CONTEXT ctx = *info->ContextRecord;
+        fprintf(s, "[FATAL] faulting thread %lu, rip %p rsp %p\n", GetCurrentThreadId(),
+            (void*)ctx.Rip, (void*)ctx.Rsp);
+        for (int f = 0; f < 32 && ctx.Rip != 0; f++) {
+            describe_addr((void*)ctx.Rip, where, sizeof(where));
+            fprintf(s, "[FATAL]   ctx #%02d %s\n", f, where);
+            DWORD64 base;
+            PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(ctx.Rip, &base, NULL);
+            if (fn == NULL) {
+                /* Leaf or invalid rip: the return address is on top of the
+                 * stack, as it is right after a bad call. */
+                if (IsBadReadPtr((void*)ctx.Rsp, sizeof(DWORD64))) {
+                    break;
+                }
+                ctx.Rip = *(DWORD64*)ctx.Rsp;
+                ctx.Rsp += 8;
+                continue;
+            }
+            PVOID handler_data;
+            DWORD64 frame;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data,
+                &frame, NULL);
+        }
+#endif
         fflush(s);
     }
     return EXCEPTION_EXECUTE_HANDLER;
