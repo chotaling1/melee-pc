@@ -29,12 +29,17 @@
 #include <sysdolphin/baselib/gobj.h>
 #include <sysdolphin/baselib/gobjgxlink.h>
 #include <sysdolphin/baselib/gobjproc.h>
+#include <sysdolphin/baselib/cobj.h>
 #include <sysdolphin/baselib/jobj.h>
+#include <sysdolphin/baselib/pobj.h>
+#include <sysdolphin/baselib/state.h>
+#include <sysdolphin/baselib/tev.h>
 
 #include "pc/pc.h"
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 
 /* ---- tuning ----------------------------------------------------------
@@ -68,7 +73,9 @@ enum {
     P_BALL_AIR_ANIM,
     P_BALL_GROUND_ANIM,
     P_BALL_ANIM_SPEED,
-    P_ROLL_RADIUS,
+    P_BALL_RADIUS,
+    P_DRAW_BALL,
+    P_HIDE_SATURN,
     P_AIR_SPIN_KEEP,
     P_SPAWN_Y,
     P_RESPAWN_DELAY,
@@ -97,7 +104,9 @@ static SoccerParam params[P_COUNT] = {
     { "ball_air_anim", -1, "Mr. Saturn animation in the air: -1 none (static pose), 0-3" },
     { "ball_ground_anim", -1, "Mr. Saturn animation on the ground: -1 none, 0-3" },
     { "ball_anim_speed", 1.0F, "animation playback speed" },
-    { "roll_radius", 4.0F, "rolling radius for spin (smaller = spins faster, 0 = no spin)" },
+    { "ball_radius", 0, "drawn ball radius; 0 = fit Mr. Saturn's hurtbox (the part you can hit)" },
+    { "draw_ball", 1, "draw the soccer ball model (0/1)" },
+    { "hide_saturn", 1, "hide Mr. Saturn's own model on the ball (0/1)" },
     { "air_spin_keep", 0.99F, "spin rate kept per frame in the air" },
     { "spawn_y", 40.0F, "kickoff drop height" },
     { "respawn_delay", 90, "frames between a goal and the next kickoff" },
@@ -138,6 +147,7 @@ static struct {
     f32 pre_coll_vel_y;
     f32 roll;      ///< ball rotation around the camera axis (radians)
     f32 spin_rate; ///< radians/frame, carried into the air
+    int ball_age;  ///< frames since kickoff
     u32 frame;
     u32 draw_passes_seen;
     FILE* log;
@@ -224,6 +234,7 @@ static void soccer_LoadConfig(void)
 
 static void ball_EnterAir(Item_GObj* gobj);
 static void ball_EnterGround(Item_GObj* gobj);
+static void ball_GetShape(Item_GObj* gobj, Vec3* center, f32* radius);
 
 static void ball_KeepHarmless(Item_GObj* gobj)
 {
@@ -235,14 +246,46 @@ static void ball_KeepHarmless(Item_GObj* gobj)
     ip->xDC8_word.flags.x15 = 0;
     ip->xD44_lifeTimer = 1000000.0F;
     ip->owner = NULL;
+    if (PARAM(P_HIDE_SATURN) != 0.0F) {
+        HSD_JObjSetFlagsAll(GET_JOBJ(gobj), JOBJ_HIDDEN);
+    }
+}
+
+/// Where the drawn ball sits: centered on Mr. Saturn's hurtbox so the model
+/// matches what can be hit, sized to it unless ball_radius overrides.
+static void ball_GetShape(Item_GObj* gobj, Vec3* center, f32* radius)
+{
+    Item* ip = GET_ITEM(gobj);
+    f32 r = PARAM(P_BALL_RADIUS);
+    if (ip->xAC8_hurtboxNum > 0) {
+        HurtCapsule* hurt = &ip->xACC_itemHurtbox[0];
+        f32 dx = hurt->b_pos.x - hurt->a_pos.x;
+        f32 dy = hurt->b_pos.y - hurt->a_pos.y;
+        center->x = 0.5F * (hurt->a_pos.x + hurt->b_pos.x);
+        center->y = 0.5F * (hurt->a_pos.y + hurt->b_pos.y);
+        center->z = 0.0F;
+        if (r <= 0.0F) {
+            r = hurt->scale * ip->scl + 0.5F * sqrtf(dx * dx + dy * dy);
+        }
+    } else {
+        if (r <= 0.0F) {
+            r = 4.0F * PARAM(P_BALL_SCALE);
+        }
+        center->x = ip->pos.x;
+        center->y = ip->pos.y + r;
+        center->z = 0.0F;
+    }
+    *radius = r;
 }
 
 static bool ball_Anim(Item_GObj* gobj)
 {
     Item* ip = GET_ITEM(gobj);
-    f32 radius = PARAM(P_ROLL_RADIUS) * PARAM(P_BALL_SCALE);
+    Vec3 center;
+    f32 radius;
 
     ball_KeepHarmless(gobj);
+    ball_GetShape(gobj, &center, &radius);
     if (radius > 0.0F) {
         if (ip->ground_or_air == GA_Ground) {
             // Rolling without slipping: moving right turns clockwise as seen
@@ -419,6 +462,7 @@ static Item_GObj* ball_Spawn(void)
     itResetVelocity(ip);
     soccer.roll = 0.0F;
     soccer.spin_rate = 0.0F;
+    soccer.ball_age = 0;
     it_80274484(gobj, GET_JOBJ(gobj), PARAM(P_BALL_SCALE));
     ball_EnterAir(gobj);
     soccer_Log("kickoff, score %d-%d (base gravity %.3f, max fall %.2f)",
@@ -426,6 +470,249 @@ static Item_GObj* ball_Spawn(void)
                ip->xCC_item_attr->x10_fall_speed,
                ip->xCC_item_attr->x14_fall_speed_max);
     return gobj;
+}
+
+/* ---- ball model ------------------------------------------------------
+ * A truncated icosahedron (12 black pentagons, 20 white hexagons) projected
+ * onto a sphere, generated at first use. Each face is fanned from its center
+ * and each fan triangle split in four, all vertices normalized, so the
+ * silhouette reads as round. Shading is a fixed world-space light computed on
+ * the CPU into vertex colors. */
+
+#define BALL_MAX_TRIS 720
+static f32 ball_mesh_pos[BALL_MAX_TRIS * 3][3];
+static u8 ball_mesh_black[BALL_MAX_TRIS * 3];
+static int ball_mesh_verts;
+
+static void vnorm(f32* v)
+{
+    f32 len = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    v[0] /= len;
+    v[1] /= len;
+    v[2] /= len;
+}
+
+static void ball_MeshTri(const f32* a, const f32* b, const f32* c, u8 black)
+{
+    const f32* tri[3];
+    int i;
+    tri[0] = a;
+    tri[1] = b;
+    tri[2] = c;
+    for (i = 0; i < 3 && ball_mesh_verts < BALL_MAX_TRIS * 3; i++) {
+        ball_mesh_pos[ball_mesh_verts][0] = tri[i][0];
+        ball_mesh_pos[ball_mesh_verts][1] = tri[i][1];
+        ball_mesh_pos[ball_mesh_verts][2] = tri[i][2];
+        vnorm(ball_mesh_pos[ball_mesh_verts]);
+        ball_mesh_black[ball_mesh_verts] = black;
+        ball_mesh_verts++;
+    }
+}
+
+/// Fan triangle split in four with midpoints pushed onto the sphere.
+static void ball_MeshFanTri(const f32* a, const f32* b, const f32* c, u8 black)
+{
+    f32 ab[3], bc[3], ca[3];
+    int i;
+    for (i = 0; i < 3; i++) {
+        ab[i] = 0.5F * (a[i] + b[i]);
+        bc[i] = 0.5F * (b[i] + c[i]);
+        ca[i] = 0.5F * (c[i] + a[i]);
+    }
+    vnorm(ab);
+    vnorm(bc);
+    vnorm(ca);
+    ball_MeshTri(a, ab, ca, black);
+    ball_MeshTri(ab, b, bc, black);
+    ball_MeshTri(ca, bc, c, black);
+    ball_MeshTri(ab, bc, ca, black);
+}
+
+static void ball_MeshFace(f32 corners[][3], int n, u8 black)
+{
+    f32 center[3] = { 0, 0, 0 };
+    int i, k;
+    for (i = 0; i < n; i++) {
+        vnorm(corners[i]);
+        for (k = 0; k < 3; k++) {
+            center[k] += corners[i][k];
+        }
+    }
+    vnorm(center);
+    for (i = 0; i < n; i++) {
+        ball_MeshFanTri(center, corners[i], corners[(i + 1) % n], black);
+    }
+}
+
+static void ball_BuildMesh(void)
+{
+    const f32 phi = 1.618034F;
+    f32 ico[12][3] = {
+        { -1, phi, 0 }, { 1, phi, 0 },  { -1, -phi, 0 }, { 1, -phi, 0 },
+        { 0, -1, phi }, { 0, 1, phi },  { 0, -1, -phi }, { 0, 1, -phi },
+        { phi, 0, -1 }, { phi, 0, 1 },  { -phi, 0, -1 }, { -phi, 0, 1 },
+    };
+    bool adj[12][12];
+    int a, b, c, k;
+
+    // Icosahedron edges have length 2 for these coordinates.
+    for (a = 0; a < 12; a++) {
+        for (b = 0; b < 12; b++) {
+            f32 d = 0;
+            for (k = 0; k < 3; k++) {
+                d += (ico[a][k] - ico[b][k]) * (ico[a][k] - ico[b][k]);
+            }
+            adj[a][b] = a != b && d < 4.5F;
+        }
+    }
+
+    // White hexagons: one per icosahedron face, corners at the edge thirds.
+    for (a = 0; a < 12; a++) {
+        for (b = a + 1; b < 12; b++) {
+            for (c = b + 1; c < 12; c++) {
+                const f32* v[3];
+                f32 hex[6][3];
+                int e;
+                if (!adj[a][b] || !adj[b][c] || !adj[a][c]) {
+                    continue;
+                }
+                v[0] = ico[a];
+                v[1] = ico[b];
+                v[2] = ico[c];
+                for (e = 0; e < 3; e++) {
+                    const f32* p = v[e];
+                    const f32* q = v[(e + 1) % 3];
+                    for (k = 0; k < 3; k++) {
+                        hex[e * 2][k] = p[k] + (q[k] - p[k]) / 3.0F;
+                        hex[e * 2 + 1][k] = p[k] + 2.0F * (q[k] - p[k]) / 3.0F;
+                    }
+                }
+                ball_MeshFace(hex, 6, 0);
+            }
+        }
+    }
+
+    // Black pentagons: one per icosahedron vertex, corners a third of the way
+    // to each neighbor, ordered by angle around the vertex.
+    for (a = 0; a < 12; a++) {
+        f32 pent[5][3];
+        f32 ang[5];
+        f32 n[3], t1[3], t2[3];
+        int count = 0;
+        int i, j;
+
+        for (k = 0; k < 3; k++) {
+            n[k] = ico[a][k];
+        }
+        vnorm(n);
+        // any vector not parallel to n, crossed with n, gives a tangent
+        t1[0] = n[1];
+        t1[1] = -n[0];
+        t1[2] = 0.0F;
+        if (ABS(n[2]) > 0.9F) {
+            t1[0] = 0.0F;
+            t1[1] = n[2];
+            t1[2] = -n[1];
+        }
+        vnorm(t1);
+        t2[0] = n[1] * t1[2] - n[2] * t1[1];
+        t2[1] = n[2] * t1[0] - n[0] * t1[2];
+        t2[2] = n[0] * t1[1] - n[1] * t1[0];
+
+        for (b = 0; b < 12 && count < 5; b++) {
+            f32 d[3];
+            if (!adj[a][b]) {
+                continue;
+            }
+            for (k = 0; k < 3; k++) {
+                pent[count][k] = ico[a][k] + (ico[b][k] - ico[a][k]) / 3.0F;
+                d[k] = pent[count][k] - ico[a][k];
+            }
+            ang[count] = atan2f(d[0] * t2[0] + d[1] * t2[1] + d[2] * t2[2],
+                                d[0] * t1[0] + d[1] * t1[1] + d[2] * t1[2]);
+            count++;
+        }
+        for (i = 1; i < count; i++) {
+            for (j = i; j > 0 && ang[j - 1] > ang[j]; j--) {
+                f32 ta = ang[j];
+                f32 tp[3];
+                ang[j] = ang[j - 1];
+                ang[j - 1] = ta;
+                for (k = 0; k < 3; k++) {
+                    tp[k] = pent[j][k];
+                    pent[j][k] = pent[j - 1][k];
+                    pent[j - 1][k] = tp[k];
+                }
+            }
+        }
+        ball_MeshFace(pent, count, 1);
+    }
+}
+
+static void soccer_DrawBall(void)
+{
+    static const f32 light[3] = { -0.37F, 0.58F, 0.73F };
+    Item_GObj* gobj = soccer.ball;
+    Mtx view;
+    Vec3 center;
+    f32 radius, c, s;
+    int i;
+
+    if (gobj == NULL || PARAM(P_DRAW_BALL) == 0.0F) {
+        return;
+    }
+    if (ball_mesh_verts == 0) {
+        ball_BuildMesh();
+        soccer_Log("ball mesh: %d triangles", ball_mesh_verts / 3);
+    }
+    ball_GetShape(gobj, &center, &radius);
+    c = cosf(soccer.roll);
+    s = sinf(soccer.roll);
+
+    HSD_StateInvalidate(-1);
+    HSD_StateInitTev();
+    GXSetColorUpdate(GX_ENABLE);
+    GXSetAlphaUpdate(GX_DISABLE);
+    GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_NOOP);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GXSetZMode(GX_ENABLE, GX_LEQUAL, GX_ENABLE);
+    GXSetZCompLoc(GX_ENABLE);
+    GXSetNumTexGens(0);
+    GXSetNumTevStages(1);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_VTX, GX_SRC_VTX,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    GXSetCullMode(GX_CULL_NONE);
+    HSD_ClearVtxDesc();
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetCurrentMtx(0);
+    HSD_CObjGetViewingMtx(HSD_CObjGetCurrent(), view);
+    GXLoadPosMtxImm(view, 0);
+
+    GXBegin(GX_TRIANGLES, GX_VTXFMT0, ball_mesh_verts);
+    for (i = 0; i < ball_mesh_verts; i++) {
+        const f32* p = ball_mesh_pos[i];
+        // roll around the camera (Z) axis; the unit position is the normal
+        f32 nx = c * p[0] - s * p[1];
+        f32 ny = s * p[0] + c * p[1];
+        f32 nz = p[2];
+        f32 diffuse = nx * light[0] + ny * light[1] + nz * light[2];
+        f32 shade = 0.4F + 0.6F * (diffuse > 0.0F ? diffuse : 0.0F);
+        u8 base = ball_mesh_black[i] ? 0x28 : 0xF0;
+        u8 v = (u8) (base * shade);
+        GXPosition3f32(center.x + radius * nx, center.y + radius * ny,
+                       center.z + radius * nz);
+        GXColor4u8(v, v, v, 0xFF);
+    }
+    GXEnd();
+
+    HSD_StateInvalidate(-1);
+    HSD_StateInitTev();
 }
 
 /* ---- goals ----------------------------------------------------------- */
@@ -456,12 +743,18 @@ static void soccer_DrawGoals(HSD_GObj* gobj, int pass)
     const f32 bar = 1.5F;
     int side;
 
-    if (!soccer.active || PARAM(P_SHOW_GOALS) == 0.0F) {
+    if (!soccer.active) {
         return;
     }
     if (pass >= 0 && pass < 8 && !(soccer.draw_passes_seen & (1 << pass))) {
         soccer.draw_passes_seen |= 1 << pass;
         soccer_Log("goal draw pass %d", pass);
+    }
+    if (pass == 0) {
+        soccer_DrawBall();
+    }
+    if (PARAM(P_SHOW_GOALS) == 0.0F) {
+        return;
     }
     for (side = SIDE_LEFT; side <= SIDE_RIGHT; side++) {
         f32 s = side == SIDE_LEFT ? -1.0F : 1.0F;
@@ -535,6 +828,15 @@ static void soccer_Think(HSD_GObj* unused)
     if (soccer.ball != NULL) {
         Item* ip = GET_ITEM(soccer.ball);
         Vec3 pos = ip->pos;
+        if (++soccer.ball_age == 10 || soccer.ball_age == 120) {
+            Vec3 center;
+            f32 radius;
+            ball_GetShape(soccer.ball, &center, &radius);
+            soccer_Log("ball age %d: pos (%.1f, %.1f) hurtboxes %d, drawn at "
+                       "(%.1f, %.1f) r %.2f",
+                       soccer.ball_age, pos.x, pos.y, ip->xAC8_hurtboxNum,
+                       center.x, center.y, radius);
+        }
         f32 ax = ABS(pos.x);
         bool in_goal = ax > PARAM(P_GOAL_LINE_X) &&
                        ax < PARAM(P_GOAL_BACK_X) &&
