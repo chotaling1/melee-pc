@@ -9,7 +9,17 @@
 /// @todo Put in proper places. ::GM_MAX_PLAYERS is ::Gm_Player_NumMax but
 /// needs to be used for array size declarations.
 /// @{
-#define GM_MAX_PLAYERS 6
+/* PC (8-player VS): slots 0-3 are controller ports 1-4 and slots 4-5 keep
+ * their vanilla special meaning (slot 4 merges every port's input for Camera
+ * Mode, slot 5 reads no input at all — see cm/camera.c:1628 and :1644), so the
+ * four extra players are appended at slots 6-9 rather than renumbering those.
+ * Vanilla value was 6. */
+#define GM_MAX_PLAYERS 10
+
+/* The player count baked into data on the disc. Never follows GM_MAX_PLAYERS:
+ * the ISO's arrays are whatever the retail game shipped, so any DISC_STRUCT
+ * sized per player must use this instead (see struct gm_evstage_table). */
+#define GM_DISC_MAX_PLAYERS 6
 #define GM_MAX_TEAMS 5
 #define GM_NAMETAG_NONE 120
 #define GM_FPS 60

@@ -92,7 +92,7 @@ struct DISC_STRUCT gm_evstage_table {
     /* 0x00 */ u8 count;
     /* 0x01 */ u8 pad1;
     /* 0x02 */ u16 stage[7];
-    /* 0x10 */ DISC_PTR(struct gm_801BAB40_src) entries[GM_MAX_PLAYERS];
+    /* 0x10 */ DISC_PTR(struct gm_801BAB40_src) entries[GM_DISC_MAX_PLAYERS];
 };
 
 struct DISC_STRUCT gm_evbonus {
