@@ -51,6 +51,10 @@
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/mobj.h>
 #include <melee/mn/mnmouse.h>
+#ifdef MELEE_PC
+#include <melee/lb/lbvector.h>
+#include "pc/pc.h"
+#endif
 
 /* 22C068 */ static void mn_8022C068(HSD_LObj*, int, int);
 
@@ -3039,6 +3043,9 @@ void mnMain_Scene_OnEnter(void* user_data)
     mn_8022DDA8_inline(hovered_selection);
     mn_8022BCF8();
     mn_8022BEDC(mn_8022BE34_OnEnter(&pos));
+#ifdef MELEE_PC
+    mnMouse_CursorCreate();
+#endif
     mn_80229B2C();
     mn_80229DC0();
 
@@ -3180,6 +3187,196 @@ static int mnMouse_MainRows(HSD_JObj** anchors, bool* enabled)
 static void mnMouse_MainHover(int row)
 {
     mn_804A04F0.hovered_selection = row;
+}
+
+static bool mnMouse_MenuHasMouse(u8 kind)
+{
+    switch (kind) {
+    case MENU_KIND_MAIN:
+    case MENU_KIND_1P:
+    case MENU_KIND_VS:
+    case MENU_KIND_TOY:
+    case MENU_KIND_SETTINGS:
+    case MENU_KIND_DATA:
+    case MENU_KIND_REG:
+    case MENU_KIND_STADIUM:
+    case MENU_KIND_SPECIAL:
+    case MENU_KIND_RECORDS:
+    case MENU_KIND_RULES:
+    case MENU_KIND_RULES_EXTRA:
+    case MENU_KIND_RULES_ITEMS:
+    case MENU_KIND_RULES_STAGE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* Mouse cursor: the stage select cursor model (MnSlMap, loaded from the
+ * user's disc the first time the mouse moves in this scene). It is drawn by
+ * the text camera (GX link 7) so it sits over the panels and labels, placed
+ * on a plane facing the camera between the eye and the menu, turned to face
+ * the eye and scaled so it covers as many pixels as on stage select. */
+static HSD_Archive* mnMouse_CursorArchive;
+static f32 mnMouse_CursorPixelsPerUnit; ///< stage select, at the cursor
+static u32 mnMouse_CursorSerial;
+static bool mnMouse_CursorShown;
+
+static f32 mnMouse_PixelsPerUnit(HSD_CObj* cobj, const Vec3* p, const Vec3* u)
+{
+    Vec3 a, b, q;
+    f32 dx, dy;
+    q.x = p->x + u->x;
+    q.y = p->y + u->y;
+    q.z = p->z + u->z;
+    lbVector_WorldToScreen(cobj, p, &a, 0);
+    lbVector_WorldToScreen(cobj, &q, &b, 0);
+    dx = b.x - a.x;
+    dy = b.y - a.y;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+static bool mnMouse_CursorLoad(HSD_GObj* gobj)
+{
+    static const Vec3 ux = { 1.0F, 0.0F, 0.0F };
+    static const Vec3 sss_pos = { 0.0F, -13.0F, 0.0F };
+    struct DISC_STRUCT {
+        DISC_PTR(HSD_CObjDesc) cam;
+        u8 pad[0x90 - 0x04];
+        DISC_PTR(HSD_Joint) joint;
+        DISC_PTR(HSD_AnimJoint) animjoint;
+        DISC_PTR(HSD_MatAnimJoint) matanim_joint;
+        DISC_PTR(HSD_ShapeAnimJoint) shapeanim_joint;
+    }* table;
+    HSD_CObj* sss_cam;
+    HSD_JObj* jobj;
+
+    mnMouse_CursorArchive = lbArchive_LoadArchive(
+        lbLang_IsSavedLanguageUS() ? "MnSlMap.usd" : "MnSlMap.dat");
+    if (mnMouse_CursorArchive == NULL) {
+        return false;
+    }
+    table = HSD_ArchiveGetPublicAddress(mnMouse_CursorArchive,
+                                        "MnSelectStageDataTable");
+    if (table == NULL) {
+        return false;
+    }
+    // MnSelectStageDataTable: +0 camera, +0x10 model table whose x80 entry
+    // (table +0x90) is the cursor; see mnStageSel_Scene_OnEnter.
+    sss_cam = HSD_CObjLoadDesc(DP(HSD_CObjDesc, table->cam));
+    mnMouse_CursorPixelsPerUnit =
+        mnMouse_PixelsPerUnit(sss_cam, &sss_pos, &ux);
+
+    jobj = HSD_JObjLoadJoint(DP(HSD_Joint, table->joint));
+    HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, jobj);
+    GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 7, 0x90);
+    HSD_JObjAddAnimAll(jobj, DP(HSD_AnimJoint, table->animjoint),
+                       DP(HSD_MatAnimJoint, table->matanim_joint),
+                       DP(HSD_ShapeAnimJoint, table->shapeanim_joint));
+    // Same setup as stage select: texture animation frame picks the port
+    // color (1 = P1).
+    HSD_JObjReqAnimAll(jobj, 0.0F);
+    HSD_JObjReqAnimAllByFlags(jobj, 0x10, 1.0F);
+    HSD_JObjAnimAll(jobj);
+    HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                    AOBJ_ARG_AOV, NULL);
+    pc_log_line("mouse cursor: stage select %.2f px/unit", mnMouse_CursorPixelsPerUnit);
+    return true;
+}
+
+static void mnMouse_CursorThink(HSD_GObj* gobj)
+{
+    HSD_JObj* jobj = gobj->hsd_obj;
+    HSD_CObj* cobj;
+    Vec3 eye, interest, fwd, up, right, ref, pos, scale;
+    Quaternion rot;
+    f32 mx, my, dist, len, ppu, s;
+    u32 serial;
+
+    serial = pc_mouse_get(&mx, &my);
+    if (serial != mnMouse_CursorSerial) {
+        mnMouse_CursorSerial = serial;
+        mnMouse_CursorShown = true;
+    } else if (mnMouse_CursorShown &&
+               (mn_804A04F0.buttons & (MenuInput_Up | MenuInput_Down |
+                                       MenuInput_Left | MenuInput_Right)) &&
+               pc_mouse_idle_ms() > 400)
+    {
+        // Stick/D-pad navigation takes over until the mouse moves again.
+        mnMouse_CursorShown = false;
+    }
+
+    if (!mnMouse_CursorShown || mn_804D6BAC == NULL ||
+        !mnMouse_MenuHasMouse(mn_804A04F0.cur_menu))
+    {
+        if (jobj != NULL) {
+            HSD_JObjSetFlagsAll(jobj, JOBJ_HIDDEN);
+        }
+        return;
+    }
+    if (jobj == NULL) {
+        if (mnMouse_CursorArchive != NULL || !mnMouse_CursorLoad(gobj)) {
+            return;
+        }
+        jobj = gobj->hsd_obj;
+    }
+
+    cobj = GET_COBJ(mn_804D6BAC);
+    HSD_CObjGetEyePosition(cobj, &eye);
+    HSD_CObjGetInterest(cobj, &interest);
+    PSVECSubtract(&interest, &eye, &fwd);
+    dist = PSVECMag(&fwd);
+    if (dist < 1e-3F) {
+        return;
+    }
+    PSVECScale(&fwd, &fwd, 1.0F / dist);
+    if (!HSD_CObjGetUpVector(cobj, &up)) {
+        up.x = 0.0F;
+        up.y = 1.0F;
+        up.z = 0.0F;
+    }
+    PSVECCrossProduct(&fwd, &up, &right);
+    len = PSVECMag(&right);
+    if (len < 1e-3F) {
+        return;
+    }
+    PSVECScale(&right, &right, 1.0F / len);
+    PSVECCrossProduct(&right, &fwd, &up);
+
+    // A plane well in front of the menu, but far from the near plane.
+    PSVECScale(&fwd, &ref, 0.5F * dist);
+    PSVECAdd(&eye, &ref, &ref);
+    if (!mnMouse_ScreenToPlane(cobj, mx, my, &ref, &right, &up, &pos)) {
+        return;
+    }
+    ppu = mnMouse_PixelsPerUnit(cobj, &pos, &right);
+    if (ppu < 1e-3F) {
+        return;
+    }
+    s = mnMouse_CursorPixelsPerUnit / ppu;
+
+    HSD_JObjClearFlagsAll(jobj, JOBJ_HIDDEN);
+    HSD_JObjSetTranslate(jobj, &pos);
+    scale.x = scale.y = scale.z = s;
+    HSD_JObjSetScale(jobj, &scale);
+    // The model faces +z on stage select: turn +z toward the eye
+    // (HSD euler order applies x, then y).
+    rot.x = asinf(fwd.y);
+    rot.y = atan2f(-fwd.x, -fwd.z);
+    rot.z = 0.0F;
+    rot.w = 0.0F;
+    HSD_JObjSetRotation(jobj, &rot);
+    HSD_JObjAnimAll(jobj);
+}
+
+void mnMouse_CursorCreate(void)
+{
+    HSD_GObj* gobj = GObj_Create(4, 5, 0x80);
+    f32 mx, my;
+    mnMouse_CursorArchive = NULL;
+    mnMouse_CursorShown = false;
+    mnMouse_CursorSerial = pc_mouse_get(&mx, &my);
+    HSD_GObj_SetupProc(gobj, mnMouse_CursorThink, 0);
 }
 
 u32 mnMouse_FilterMenuInput(u32 buttons)

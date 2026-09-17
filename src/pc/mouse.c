@@ -32,6 +32,7 @@ static float s_x, s_y;
 static bool s_moved;
 static u32 s_motion_serial;
 static Uint64 s_left_click_at; /* 0 = no unconsumed click */
+static Uint64 s_activity_at;   /* last motion, button or wheel event */
 static bool s_used;
 static bool s_held[2];
 static Uint64 s_press_until[2];
@@ -103,6 +104,7 @@ void pc_mouse_event(const SDL_Event* e) {
         s_y = ly;
         s_moved = true;
         s_motion_serial++;
+        s_activity_at = SDL_GetTicks();
         unlock();
         return;
     }
@@ -116,6 +118,7 @@ void pc_mouse_event(const SDL_Event* e) {
             return;
         lock();
         s_used = true;
+        s_activity_at = SDL_GetTicks();
         if (e->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             s_held[index] = true;
             s_press_until[index] = SDL_GetTicks() + MIN_PRESS_MS;
@@ -132,6 +135,7 @@ void pc_mouse_event(const SDL_Event* e) {
             y = -y;
         lock();
         s_used = true;
+        s_activity_at = SDL_GetTicks();
         s_wheel_accum += y;
         while (s_wheel_accum >= 1.0f) {
             s_wheel_pending++;
@@ -197,6 +201,15 @@ bool pc_mouse_take_left_click(void) {
     }
     unlock();
     return clicked;
+}
+
+/* Milliseconds since the last mouse motion, button or wheel event. */
+u32 pc_mouse_idle_ms(void) {
+    Uint64 at;
+    lock();
+    at = s_activity_at;
+    unlock();
+    return (u32) (SDL_GetTicks() - at);
 }
 
 bool pc_mouse_merge(PADStatus* st) {

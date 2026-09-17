@@ -6,32 +6,34 @@
 
 #include "pc/pc.h"
 
-bool mnMouse_GetPlanePoint(HSD_CObj* cobj, const Vec3* ref, Vec3* out)
+bool mnMouse_ScreenToPlane(HSD_CObj* cobj, f32 mx, f32 my, const Vec3* ref,
+                           const Vec3* u, const Vec3* v, Vec3* out)
 {
-    f32 mx, my;
     Vec3 guess;
     int iter;
 
-    if (cobj == NULL || !pc_mouse_take_motion(&mx, &my)) {
+    if (cobj == NULL) {
         return false;
     }
 
     // Menu cameras are fixed, but the projection type and parameters come
     // from disc data, so invert lbVector_WorldToScreen numerically: linearize
-    // around the current guess with one-unit steps along x and y and take a
+    // around the current guess with one-unit steps along u and v and take a
     // Newton step. On a plane facing the camera one step is exact; a few more
     // absorb perspective.
     guess = *ref;
     for (iter = 0; iter < 4; iter++) {
         Vec3 p, s0, sx, sy;
-        f32 ax, ay, bx, by, det, ex, ey;
+        f32 ax, ay, bx, by, det, ex, ey, a, b;
 
-        p = guess;
-        lbVector_WorldToScreen(cobj, &p, &s0, 0);
-        p.x += 1.0F;
+        lbVector_WorldToScreen(cobj, &guess, &s0, 0);
+        p.x = guess.x + u->x;
+        p.y = guess.y + u->y;
+        p.z = guess.z + u->z;
         lbVector_WorldToScreen(cobj, &p, &sx, 0);
-        p.x -= 1.0F;
-        p.y += 1.0F;
+        p.x = guess.x + v->x;
+        p.y = guess.y + v->y;
+        p.z = guess.z + v->z;
         lbVector_WorldToScreen(cobj, &p, &sy, 0);
 
         ax = sx.x - s0.x;
@@ -44,20 +46,35 @@ bool mnMouse_GetPlanePoint(HSD_CObj* cobj, const Vec3* ref, Vec3* out)
         }
         ex = mx - s0.x;
         ey = my - s0.y;
-        guess.x += (ex * by - bx * ey) / det;
-        guess.y += (ax * ey - ex * ay) / det;
+        a = (ex * by - bx * ey) / det;
+        b = (ax * ey - ex * ay) / det;
+        guess.x += a * u->x + b * v->x;
+        guess.y += a * u->y + b * v->y;
+        guess.z += a * u->z + b * v->z;
         if (ex * ex + ey * ey < 0.01F) {
             break;
         }
         // Keep lbVector_WorldToScreen's range asserts satisfied.
         if (guess.x < -10000.0F || guess.x > 10000.0F || guess.y < -10000.0F ||
-            guess.y > 10000.0F)
+            guess.y > 10000.0F || guess.z < -10000.0F || guess.z > 10000.0F)
         {
             return false;
         }
     }
     *out = guess;
     return true;
+}
+
+bool mnMouse_GetPlanePoint(HSD_CObj* cobj, const Vec3* ref, Vec3* out)
+{
+    static const Vec3 ux = { 1.0F, 0.0F, 0.0F };
+    static const Vec3 uy = { 0.0F, 1.0F, 0.0F };
+    f32 mx, my;
+
+    if (cobj == NULL || !pc_mouse_take_motion(&mx, &my)) {
+        return false;
+    }
+    return mnMouse_ScreenToPlane(cobj, mx, my, ref, &ux, &uy, out);
 }
 
 int mnMouse_PickRow(HSD_CObj* cobj, HSD_JObj** anchors, const bool* enabled,

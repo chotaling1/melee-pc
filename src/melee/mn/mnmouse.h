@@ -13,6 +13,15 @@
 /// plane z = @p ref->z that @p cobj shows under the mouse and returns true.
 bool mnMouse_GetPlanePoint(HSD_CObj* cobj, const Vec3* ref, Vec3* out);
 
+/// Finds the point on the plane through @p ref spanned by @p u and @p v that
+/// @p cobj shows at logical screen position (@p mx, @p my).
+bool mnMouse_ScreenToPlane(HSD_CObj* cobj, f32 mx, f32 my, const Vec3* ref,
+                           const Vec3* u, const Vec3* v, Vec3* out);
+
+/// Main menu scene: creates the mouse cursor gobj (the stage select cursor
+/// model, loaded on first mouse movement). Defined in mnmain.c.
+void mnMouse_CursorCreate(void);
+
 #define MN_MOUSE_MAX_ROWS 40
 #define MN_MOUSE_IDLE (-2) ///< mouse neither moved nor clicked this frame
 #define MN_MOUSE_NONE (-1) ///< mouse active but over no row

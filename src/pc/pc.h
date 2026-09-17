@@ -38,6 +38,7 @@ void pc_mouse_update(void);
 bool pc_mouse_take_motion(float* x, float* y);
 uint32_t pc_mouse_get(float* x, float* y);
 bool pc_mouse_take_left_click(void);
+uint32_t pc_mouse_idle_ms(void);
 void pc_touch_apply(void);
 
 /* Set once the window is closed; the game loop is expected to exit. */
