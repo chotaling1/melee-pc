@@ -1743,6 +1743,10 @@ void fn_8016DCC0(StartMeleeData* arg0)
     case 2:
     case 3:
         for (i = 0; i < GM_MAX_PLAYERS; i++) {
+            OSReport("[8p] init slot %d: ckind=%d slot_type=%d color=%d\n",
+                     (int) i, (int) arg0->players[i].ckind,
+                     (int) arg0->players[i].slot_type,
+                     (int) arg0->players[i].color);
             fn_8016D8AC(i, &arg0->players[i]);
         }
         break;

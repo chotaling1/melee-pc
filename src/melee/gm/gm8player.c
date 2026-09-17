@@ -36,41 +36,50 @@ int gm8Player_ActiveCount(void)
 
 void gm8Player_ConfigureMatch(StartMeleeData* start)
 {
-    PlayerInitData* proto = NULL;
+    const PlayerInitData* occupied_slot[GM8P_EXTRA_BASE];
     int occupied = 0;
     int i;
 
     gm8p_active_count = 0;
 
+    OSReport("[8p] hook reached, enabled=%d\n",
+             pc_is_eight_player_enabled() ? 1 : 0);
+
     if (!pc_is_eight_player_enabled()) {
+        /* The VS player loops now run to GM_MAX_PLAYERS, so the slots past
+         * vanilla have to be explicitly empty. They are zeroed, and a zeroed
+         * slot_type is Gm_PKind_Human, which would otherwise load four ghost
+         * Captain Falcons. */
+        for (i = GM8P_EXTRA_BASE; i < GM_MAX_PLAYERS; i++) {
+            start->players[i].slot_type = Gm_PKind_NA;
+        }
         return;
     }
 
-    /* Count who the CSS actually put in the match, and keep the first of them
-     * as a proto so every unlisted field (ratios, scale, stocks, rumble)
-     * stays whatever this match was set up with. */
+    /* Collect who the CSS actually put in the match. Cloning one of these
+     * keeps every unlisted field (ratios, scale, stocks, rumble) at whatever
+     * this match was set up with. */
     for (i = 0; i < GM8P_EXTRA_BASE; i++) {
         if (start->players[i].slot_type != Gm_PKind_NA) {
-            occupied++;
-            if (proto == NULL) {
-                proto = &start->players[i];
-            }
+            occupied_slot[occupied++] = &start->players[i];
         }
     }
 
-    if (proto == NULL) {
+    if (occupied == 0) {
         OSReport("[8p] no players in the match, nothing to pad\n");
         return;
     }
 
     for (i = 0; i < GM8P_EXTRA_COUNT; i++) {
         PlayerInitData* p = &start->players[GM8P_EXTRA_BASE + i];
+        /* Clone a character that is already in the match rather than adding a
+         * new one. Melee keeps character data in ARAM, which the port caps at
+         * 16 MB (PC_ARAM_SIZE), and four more unique fighters overruns it. */
+        const PlayerInitData* donor = occupied_slot[i % occupied];
 
-        *p = *proto;
+        *p = *donor;
         p->slot = GM8P_EXTRA_BASE + i;
         p->slot_type = Gm_PKind_Cpu;
-        p->ckind = (s8) gm8p_fill_chars[i];
-        p->color = 0;
         p->cpu_kind = 0;
         p->cpu_level = 5;
         p->nametag = GM_NAMETAG_NONE;
