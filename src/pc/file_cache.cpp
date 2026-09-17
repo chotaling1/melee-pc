@@ -6,6 +6,9 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#ifdef _WIN32
+#include <malloc.h>
+#endif
 #include <cstring>
 #include <fstream>
 #include <list>
@@ -216,13 +219,22 @@ bool preload_single_file(const char* name, int entryNum) {
     if (file_len > 0) {
         size_t aligned_sz = (file_len + 31) & ~31;
         void* raw_buf = nullptr;
+#ifdef _WIN32
+        raw_buf = _aligned_malloc(aligned_sz, 32);
+        if (raw_buf != nullptr) {
+#else
         if (posix_memalign(&raw_buf, 32, aligned_sz) == 0 && raw_buf != nullptr) {
+#endif
             s32 bytesRead = DVDReadPrio(&fi, raw_buf, static_cast<s32>(aligned_sz), 0, 1);
             if (bytesRead >= 0) {
                 pc_file_cache_put(key.c_str(), raw_buf, file_len);
                 success = true;
             }
+#ifdef _WIN32
+            _aligned_free(raw_buf);
+#else
             free(raw_buf);
+#endif
         }
     }
     DVDClose(&fi);
