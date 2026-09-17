@@ -46,6 +46,56 @@ handling exists today; aurora forwards SDL mouse events only to ImGui/RmlUi
 
 ## Soccer
 
+### Soccer Melee as a Special Melee mode (queued 2026-09-17)
+Goal: Soccer is entered from the Special Melee menu instead of a global
+launcher toggle, and the soccer arenas exist only inside it — the Soccer stage
+select offers nothing but arenas, and no other screen offers arenas.
+
+Where it stands today:
+- Soccer is the launcher/F1 pref `prefs.soccer` (`src/pc/launcher.cpp`,
+  `src/pc/launcher_data.cpp`) read as `pc_is_soccer_enabled()` (`src/pc/pc.h:68`)
+  in `soccer_ConfigureMatch` (`src/melee/gm/gmsoccer.c:1021`), which also
+  requires the stage be Final Destination.
+- Arena icons are drawn whenever `gm_GetCurrentGameMode() == GM_VS`
+  (`arenaSel_Enabled`, `src/melee/mn/mnstagesel.c:113`), so they show up in
+  regular VS, and picking one force-starts a soccer match
+  (`gmsoccer.c:1011`-`1019`).
+
+Work:
+1. Mode: add `GM_SOCCER_VS` to `GameModeKind` (`src/melee/gm/forward.h:19`-`66`),
+   appended past the vanilla values so the scene tables don't shift; then walk
+   the mode switches (`gmscdata.c` scene data, `gmvs.c:2085`,
+   `gmmenumode.c:204`) and give it the same treatment as `GM_LIGHTNING_VS`.
+2. Menu row: `SEL_SPECIAL_VS_SOCCER = 10` in `SpecialVsMenuSelection`
+   (`src/melee/mn/forward.h:169`), bump `selection_count` for
+   `MENU_KIND_SPECIAL` in `mn_803EB6B0` (`mnmain.c:387`), and add the confirm
+   case in `mn_8022C4F4` (`mnmain.c:1926`+) doing the usual
+   `data->pending_mode = GM_SOCCER_VS; gm_801A4B60()`.
+   - Resolve this first: the ten existing rows are DAT-driven art and animation
+     (`start_frame + selection * 2`, plus SIS description indices), so an 11th
+     row has no text image or animation frame. Either draw the row from code
+     (same approach as the arena icons in `mnstagesel.c`) or find a spare frame
+     in the menu DAT. The answer decides how much of the rest is worth doing.
+3. Gate on the mode, not the pref: `soccer_ConfigureMatch` keys on
+   `gm_GetCurrentGameMode() == GM_SOCCER_VS`. Keep `prefs.soccer` as a dev
+   shortcut if it's still useful, but it stops being the user-facing path, and
+   the "an arena implies soccer" special case at `gmsoccer.c:1011` can go once
+   the mode carries the intent.
+4. Stage select, both directions:
+   - `arenaSel_Enabled()` → `gm_GetCurrentGameMode() == GM_SOCCER_VS`, so the
+     arena row disappears from regular VS and everywhere else.
+   - In Soccer Melee only arenas are pickable: block cursor movement onto the
+     vanilla slots and ignore confirm there (`mnStageSel_804D6CAE`, the slot
+     table `mnStageSel_803F06D0`, and Random `0x1D`). v1 can leave the vanilla
+     grid drawn but unreachable; nicer is to hide it and lay the arena row out
+     on its own.
+   - Entering the screen must land the cursor on an arena, not Final
+     Destination.
+
+Verify: `ninja -C build-win melee`, then Chuck checks that Special Melee lists
+Soccer, its stage select offers only the arenas and starts a soccer match on
+each, and regular VS/other modes show no arena icons at all.
+
 ### Match rules (queued 2026-09-17)
 - Results screen should name the side with more goals as the winner, not the
   stock/KO leader.
