@@ -59,5 +59,8 @@ select screen.
 - Decided (Chuck, 2026-09-17): drawn geometry is fine for v1; the fields get
   their own new stage select icons, in a row under Final Destination (like
   pre-decomp Melee mods that added icons). No slot swapping.
-- Status 2026-09-17: gameplay (collision, points, drawing; 4 arenas) done and
-  confirmed; stage select icon row built, awaiting test.
+- Status 2026-09-17: done and confirmed in game. 4 arenas (Classic Pitch, Sky
+  Box, Wide Field, Tiny Cage) with drawn icons under the Battlefield/FD row in
+  regular VS; picking one starts a soccer match there.
+- Follow-ups: nicer arena visuals (textures/backgrounds), arena name on the
+  game's own name plate, more fields.
