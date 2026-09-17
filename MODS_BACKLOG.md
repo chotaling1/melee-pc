@@ -161,5 +161,24 @@ be updated to match.
     upstream merges) or a separate port-side input path.
   - Presentation still assumes 4: HUD (`src/melee/if/ifall.c:132`, `:220`) and
     CSS (`src/melee/mn/mncharsel.c:3447`, `:5470`).
-- Next: spawn 8 (1 human + 7 CPU) through a debug path to find out what breaks
-  at runtime — camera framing, HUD, GObj limits — before any CSS or input work.
+- Status 2026-09-17: **8 fighters run a full match, confirmed in game**
+  (`06d6503`). Toggle `eight-player` on the Cheats tab pads a VS match out to 8
+  by cloning the characters already selected. Four crashes on the way there;
+  the causes are written up in `MEMORY.md`.
+- Ceiling found: 8 is the engine's limit, not a choice. A fighter's `player_id`
+  is its slot index (`ft/fighter.c:695`) and `pltrick.c:341` asserts it is < 8
+  because the hit table is an 8-bit mask, so the slots are 0-7 with no gaps.
+  That costs Camera Mode its slots 4-5; knowingly broken for now.
+- Also found: character data lives in a 16 MB ARAM pool, so 8 *unique*
+  characters will not load. Cloning selected characters avoids it; raising the
+  cap means changing how the port distinguishes ARAM from MEM1 pointers
+  (`PC_IS_ARAM_ADDR`, `src/pc/disc.h:84`).
+- Next, in order:
+  1. Remove the per-slot debug logging in `gmvs.c` `fn_8016DCC0`.
+  2. HUD for 8 (`src/melee/if/ifall.c:132`, `:220`) — players 5-8 have no
+     damage display.
+  3. Camera framing for 8 subjects.
+  4. The other ~144 literal `< 6` player loops outside `gmvs.c`.
+  5. CSS for 8 (`mncharsel.c:3447`, `:5470`) and input past `PAD_CHANMAX 4`
+     in vendored aurora — the largest item, and the one that makes the extras
+     human-playable rather than CPUs.
