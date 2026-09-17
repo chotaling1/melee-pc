@@ -7,6 +7,7 @@
 
 #include <melee/ft/forward.h>
 #include <melee/gm/forward.h>
+#include <melee/gm/gm_1601.h>
 #include <melee/mn/types.h>
 #include <melee/pl/forward.h>
 
@@ -34,6 +35,19 @@ int gm8Player_ActiveCount(void)
     return gm8p_active_count;
 }
 
+void gm8Player_ClearExtraSlots(StartMeleeData* start)
+{
+    int i;
+
+    /* The player loops now run to GM_MAX_PLAYERS, so every slot past vanilla
+     * has to be a valid empty one before anything walks the array. Zeroed
+     * memory is not empty here: Gm_PKind_Human is 0, so an untouched slot
+     * reads as a human player and gets a fighter built for it. */
+    for (i = GM8P_EXTRA_BASE; i < GM_MAX_PLAYERS; i++) {
+        gm_SetupPlayerDefaults(&start->players[i]);
+    }
+}
+
 void gm8Player_ConfigureMatch(StartMeleeData* start)
 {
     const PlayerInitData* occupied_slot[GM8P_EXTRA_BASE];
@@ -46,13 +60,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
              pc_is_eight_player_enabled() ? 1 : 0);
 
     if (!pc_is_eight_player_enabled()) {
-        /* The VS player loops now run to GM_MAX_PLAYERS, so the slots past
-         * vanilla have to be explicitly empty. They are zeroed, and a zeroed
-         * slot_type is Gm_PKind_Human, which would otherwise load four ghost
-         * Captain Falcons. */
-        for (i = GM8P_EXTRA_BASE; i < GM_MAX_PLAYERS; i++) {
-            start->players[i].slot_type = Gm_PKind_NA;
-        }
+        gm8Player_ClearExtraSlots(start);
         return;
     }
 

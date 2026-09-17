@@ -9,8 +9,17 @@
 
 HSD_RumbleData HSD_Rumble_804C22E0[4];
 
+/* PC (8-player VS): rumble exists per physical controller, so this table has
+ * one entry per port. Player slots now run past GM_MAX_PLAYERS 4, and a
+ * fighter in a high slot reaches here with its own slot number, which used to
+ * index off the end and dereference garbage. */
+#define RUMBLE_PORT_VALID(no) ((no) < (u8) ARRAY_SIZE(HSD_Rumble_804C22E0))
+
 void HSD_PadRumbleOn(u8 no)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return;
+    }
     bool intrEnabled = OSDisableInterrupts();
     HSD_RumbleData* r5 = &HSD_Rumble_804C22E0[no];
 
@@ -20,6 +29,9 @@ void HSD_PadRumbleOn(u8 no)
 
 void HSD_PadRumbleOffN(u8 no)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return;
+    }
     bool intrEnabled = OSDisableInterrupts();
     HSD_RumbleData* r5 = &HSD_Rumble_804C22E0[no];
 
@@ -43,6 +55,9 @@ void HSD_PadRumbleFree(HSD_RumbleData* a, HSD_PadRumbleListData* b)
 
 void HSD_PadRumbleRemove(u8 no)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return;
+    }
     HSD_RumbleData* r28 = &HSD_Rumble_804C22E0[no];
     bool r29 = OSDisableInterrupts();
     HSD_PadRumbleListData* r4 = r28->listdatap;
@@ -66,6 +81,9 @@ void HSD_PadRumbleRemoveAll(void)
 
 void HSD_PadRumbleRemoveId(u8 no, int id)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return;
+    }
     HSD_RumbleData* r31 = &HSD_Rumble_804C22E0[no];
     bool r3 = OSDisableInterrupts();
     HSD_PadRumbleListData* r7 = r31->listdatap;
@@ -82,6 +100,9 @@ void HSD_PadRumbleRemoveId(u8 no, int id)
 
 void HSD_PadRumblePause(u8 no, int status)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return;
+    }
     bool intrEnabled = OSDisableInterrupts();
     HSD_PadRumbleListData* r4 = HSD_Rumble_804C22E0[no].listdatap;
 
@@ -128,6 +149,9 @@ void func_80378430_inline(HSD_PadRumbleListData** r6,
 
 int HSD_PadRumbleAdd(u8 no, int id, int frame, int pri, void* listp)
 {
+    if (!RUMBLE_PORT_VALID(no)) {
+        return 0;
+    }
     struct RumbleInfo* r31 = &HSD_PadLibData.rumble_info;
     HSD_RumbleData* r30 = &HSD_Rumble_804C22E0[no];
     int r29 = 0;

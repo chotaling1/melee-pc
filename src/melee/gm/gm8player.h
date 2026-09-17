@@ -14,6 +14,11 @@
 /// Called from #onEnterVs before the match reads #StartMeleeData.
 void gm8Player_ConfigureMatch(StartMeleeData* start);
 
+/// Reset the slots past vanilla to a valid empty state. Must run before
+/// anything iterates the player array, including on the character select
+/// screen, which also builds fighters.
+void gm8Player_ClearExtraSlots(StartMeleeData* start);
+
 /// Number of fighters the last configured match was padded out to.
 int gm8Player_ActiveCount(void);
 

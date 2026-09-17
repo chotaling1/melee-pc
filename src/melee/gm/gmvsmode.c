@@ -197,6 +197,8 @@ void onEnterDebugVs(GameModeState* state)
 
 void onEnterCss(GameModeState* state)
 {
+    /* The CSS builds fighters too, so the extra slots must be valid here. */
+    gm8Player_ClearExtraSlots(&gmVsMelee_GetVsData()->start);
     gmVsMelee_EnterCss(state, gmVsMelee_GetVsData(), VS_MELEE);
 }
 
@@ -217,8 +219,10 @@ void onExitSss(GameModeState* state)
 
 void onEnterVs(GameModeState* state)
 {
+    /* Before EnterVs: it copies every slot out of the VsModeData, so the
+     * extra players have to exist there first. */
+    gm8Player_ConfigureMatch(&gmVsMelee_GetVsData()->start);
     gmVsMelee_EnterVs(state, gmVsMelee_GetVsData(), NULL, NULL);
-    gm8Player_ConfigureMatch(gm_GetGameModeStateEnterData(state));
     gmSoccer_ConfigureMatch(gm_GetGameModeStateEnterData(state));
 }
 
