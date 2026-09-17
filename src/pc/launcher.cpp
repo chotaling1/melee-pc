@@ -951,6 +951,8 @@ public:
     Rml::ElementDocument* counter = nullptr;
     Rml::ElementDocument* soccer_score = nullptr;
     Rml::ElementDocument* arena_name = nullptr;
+    Rml::ElementDocument* soccer_banner = nullptr;
+    std::string soccer_banner_shown;
     const char* arena_shown = nullptr;
     int soccer_shown = -1;
     SDL_Window* window = nullptr;
@@ -1511,6 +1513,7 @@ extern "C" void pc_menu_init(SDL_Window* window) {
     port_menu.counter = context->LoadDocument((resources / "fps.rml").string());
     port_menu.soccer_score = context->LoadDocument((resources / "soccer.rml").string());
     port_menu.arena_name = context->LoadDocument((resources / "arena-name.rml").string());
+    port_menu.soccer_banner = context->LoadDocument((resources / "soccer-banner.rml").string());
     if (!port_menu.document) {
         SDL_Log("F1 menu: could not load port-menu.rml");
         return;
@@ -1532,7 +1535,27 @@ extern "C" void pc_menu_event(const SDL_Event* event) {
 extern "C" bool pc_soccer_is_active(void);
 extern "C" void pc_soccer_get_score(int* left, int* right);
 extern "C" const char* pc_arena_hovered_name(void);
+extern "C" const char* pc_soccer_banner(int* side);
 extern "C" void pc_menu_update(void) {
+    if (port_menu.soccer_banner) {
+        int side = -1;
+        const char* text = pc_soccer_banner(&side);
+        if (text != nullptr) {
+            std::string key = std::string(text) + char('1' + side);
+            if (key != port_menu.soccer_banner_shown) {
+                Rml::Element* el = port_menu.soccer_banner->GetElementById("text");
+                el->SetInnerRML(text);
+                el->SetClass("red", side == 0);
+                el->SetClass("blue", side == 1);
+                port_menu.soccer_banner_shown = key;
+            }
+            if (!port_menu.soccer_banner->IsVisible())
+                port_menu.soccer_banner->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+        } else if (port_menu.soccer_banner->IsVisible()) {
+            port_menu.soccer_banner->Hide();
+            port_menu.soccer_banner_shown.clear();
+        }
+    }
     if (port_menu.arena_name) {
         const char* name = pc_arena_hovered_name();
         if (name != nullptr) {
@@ -1553,8 +1576,9 @@ extern "C" void pc_menu_update(void) {
             if (!port_menu.soccer_score->IsVisible())
                 port_menu.soccer_score->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
             if (left * 100 + right != port_menu.soccer_shown) {
-                port_menu.soccer_score->GetElementById("score")->SetInnerRML(
-                    std::to_string(left) + " - " + std::to_string(right));
+                port_menu.soccer_score->GetElementById("left")->SetInnerRML(std::to_string(left));
+                port_menu.soccer_score->GetElementById("right")->SetInnerRML(
+                    std::to_string(right));
                 port_menu.soccer_shown = left * 100 + right;
             }
         } else if (port_menu.soccer_score->IsVisible())

@@ -24,6 +24,7 @@
 #include <melee/it/kinds/types.h>
 #include <melee/it/types.h>
 #include <melee/lb/lb_00B0.h>
+#include <melee/lb/lbaudio_ax.h>
 #include <melee/lb/lbcollision.h>
 #include <melee/mn/types.h>
 #include <melee/pl/player.h>
@@ -87,6 +88,9 @@ enum {
     P_GOAL_TOP_Y,
     P_SHOW_GOALS,
     P_ARENA,
+    P_KICKOFF_COUNTDOWN,
+    P_GOAL_BANNER_FRAMES,
+    P_GOAL_SFX,
     P_COUNT,
 };
 
@@ -118,6 +122,9 @@ static SoccerParam params[P_COUNT] = {
     { "goal_bottom_y", -40.0F, "bottom of the goal" },
     { "goal_top_y", 35.0F, "crossbar height" },
     { "show_goals", 1, "draw the goal frames and nets (0/1)" },
+    { "kickoff_countdown", 3, "seconds of 3-2-1 countdown before each kickoff (0 = drop the ball right away)" },
+    { "goal_banner_frames", 90, "frames the GOAL! banner stays up (the kickoff countdown replaces it)" },
+    { "goal_sfx", 0x13D, "sound played on a goal (317/318/319 are crowd reactions, 0 = none)" },
     { "arena", 0, "soccer arena on Final Destination: 0 = open FD, 1 Classic Pitch, 2 Sky Box, 3 Wide Field, 4 Tiny Cage (goal_* keys are ignored in arenas)" },
 };
 
@@ -151,10 +158,28 @@ static struct {
     f32 roll;      ///< ball rotation around the camera axis (radians)
     f32 spin_rate; ///< radians/frame, carried into the air
     int ball_age;  ///< frames since kickoff
+    int countdown_timer; ///< frames left in the kickoff countdown
+    int countdown_shown; ///< number currently on the banner
+    int banner_timer;    ///< frames left on the banner (-1 = until replaced)
+    int banner_side;     ///< -1 neutral, SIDE_LEFT red, SIDE_RIGHT blue
+    char banner[32];
     u32 frame;
     u32 draw_passes_seen;
     FILE* log;
 } soccer;
+
+/* ---- banner + sounds -------------------------------------------------- */
+
+/// Menu sound effects (see sfxMove/sfxForward in src/melee/mn/inlines.h).
+#define SFX_MENU_FORWARD 1
+#define SFX_MENU_MOVE 2
+
+static void soccer_Banner(const char* text, int side, int frames)
+{
+    snprintf(soccer.banner, sizeof(soccer.banner), "%s", text);
+    soccer.banner_side = side;
+    soccer.banner_timer = frames;
+}
 
 /* ---- log + config ---------------------------------------------------- */
 
@@ -816,16 +841,36 @@ static void soccer_Goal(int scoring_side, Vec3* pos)
                scoring_side == SIDE_LEFT ? "left" : "right", pos->x, pos->y,
                soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
     Camera_RequestQuake(QuakeKind_Small, pos);
+    if (PARAM(P_GOAL_SFX) > 0.0F) {
+        lbAudioAx_8002411C((int) PARAM(P_GOAL_SFX));
+    }
     if (soccer.score[scoring_side] >= (int) PARAM(P_GOALS_TO_WIN)) {
         soccer.finished = true;
         soccer.end_timer = (int) PARAM(P_END_DELAY);
         soccer_Log("%s side wins", scoring_side == SIDE_LEFT ? "left" : "right");
+        soccer_Banner(scoring_side == SIDE_LEFT ? "RED WINS!" : "BLUE WINS!",
+                      scoring_side, -1);
+    } else {
+        soccer_Banner("GOAL!", scoring_side, (int) PARAM(P_GOAL_BANNER_FRAMES));
+    }
+}
+
+static void soccer_Kickoff(void)
+{
+    soccer.ball = ball_Spawn();
+    soccer.respawn_timer = (int) PARAM(P_RESPAWN_DELAY);
+    if (soccer.ball != NULL && PARAM(P_KICKOFF_COUNTDOWN) > 0.0F) {
+        soccer_Banner("KICK OFF!", -1, 45);
+        lbAudioAx_80024030(SFX_MENU_FORWARD);
     }
 }
 
 static void soccer_Think(HSD_GObj* unused)
 {
     soccer.frame++;
+    if (soccer.banner_timer > 0 && --soccer.banner_timer == 0) {
+        soccer.banner[0] = '\0';
+    }
     if (!soccer.sides_assigned) {
         soccer_AssignSides();
     }
@@ -872,12 +917,30 @@ static void soccer_Think(HSD_GObj* unused)
     if (soccer.finished) {
         return;
     }
+    if (soccer.countdown_timer > 0) {
+        int n = (soccer.countdown_timer + 59) / 60;
+        if (n != soccer.countdown_shown) {
+            char text[4];
+            snprintf(text, sizeof(text), "%d", n);
+            soccer_Banner(text, -1, -1);
+            soccer.countdown_shown = n;
+            lbAudioAx_80024030(SFX_MENU_MOVE);
+        }
+        if (--soccer.countdown_timer == 0) {
+            soccer_Kickoff();
+        }
+        return;
+    }
     if (soccer.respawn_timer > 0) {
         soccer.respawn_timer--;
         return;
     }
-    soccer.ball = ball_Spawn();
-    soccer.respawn_timer = (int) PARAM(P_RESPAWN_DELAY);
+    if (PARAM(P_KICKOFF_COUNTDOWN) > 0.0F) {
+        soccer.countdown_timer = (int) (PARAM(P_KICKOFF_COUNTDOWN) * 60.0F);
+        soccer.countdown_shown = 0;
+        return;
+    }
+    soccer_Kickoff();
 }
 
 static void soccer_OnMatchStart(void)
@@ -967,6 +1030,12 @@ void gmSoccer_ConfigureMatch(StartMeleeData* start)
 bool pc_soccer_is_active(void)
 {
     return soccer.active;
+}
+
+const char* pc_soccer_banner(int* side)
+{
+    *side = soccer.banner_side;
+    return soccer.active && soccer.banner[0] != '\0' ? soccer.banner : NULL;
 }
 
 void pc_soccer_get_score(int* left, int* right)
