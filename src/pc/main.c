@@ -183,11 +183,12 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* info) {
         CONTEXT ctx = *info->ContextRecord;
         fprintf(s, "[FATAL] faulting thread %lu, rip %p rsp %p\n", GetCurrentThreadId(),
             (void*)ctx.Rip, (void*)ctx.Rsp);
-        for (int f = 0; f < 32 && ctx.Rip != 0; f++) {
+        for (int f = 0; f < 32; f++) {
             describe_addr((void*)ctx.Rip, where, sizeof(where));
             fprintf(s, "[FATAL]   ctx #%02d %s\n", f, where);
             DWORD64 base;
-            PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(ctx.Rip, &base, NULL);
+            PRUNTIME_FUNCTION fn =
+                ctx.Rip != 0 ? RtlLookupFunctionEntry(ctx.Rip, &base, NULL) : NULL;
             if (fn == NULL) {
                 /* Leaf or invalid rip: the return address is on top of the
                  * stack, as it is right after a bad call. */
@@ -196,12 +197,35 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* info) {
                 }
                 ctx.Rip = *(DWORD64*)ctx.Rsp;
                 ctx.Rsp += 8;
-                continue;
+            } else {
+                PVOID handler_data;
+                DWORD64 frame;
+                RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data,
+                    &frame, NULL);
             }
-            PVOID handler_data;
-            DWORD64 frame;
-            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data,
-                &frame, NULL);
+            if (ctx.Rip == 0) {
+                break;
+            }
+        }
+        /* If unwinding goes wrong, anything on the stack that points into
+         * melee.exe is still a likely return address. */
+        HMODULE exe = GetModuleHandleA(NULL);
+        const DWORD64* sp = (const DWORD64*)info->ContextRecord->Rsp;
+        int shown = 0;
+        for (int i = 0; i < 512 && shown < 24; i++) {
+            if (IsBadReadPtr(&sp[i], sizeof(DWORD64))) {
+                break;
+            }
+            HMODULE mod;
+            if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    (LPCSTR)sp[i], &mod) &&
+                mod == exe)
+            {
+                describe_addr((void*)sp[i], where, sizeof(where));
+                fprintf(s, "[FATAL]   stack +0x%03X %s\n", (unsigned)(i * 8), where);
+                shown++;
+            }
         }
 #endif
         fflush(s);
