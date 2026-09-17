@@ -107,6 +107,7 @@ void pc_frame_boundary(void) {
                 pc_menu_toggle();
             pc_menu_event(&event->sdl);
             pc_keyboard_event(&event->sdl);
+            pc_mouse_event(&event->sdl);
         }
         ++event;
     }

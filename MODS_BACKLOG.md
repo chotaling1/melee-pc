@@ -5,7 +5,7 @@ Sections are in priority order.
 
 ## Dev tools
 
-### Mouse control for menus (queued 2026-09-17, top priority)
+### Mouse control for menus (queued 2026-09-17, top priority; phases 0-1 built 2026-09-17, awaiting test)
 Drive in-game menus with the mouse for development. No game-side mouse
 handling exists today; aurora forwards SDL mouse events only to ImGui/RmlUi
 (the F1 menu already takes the mouse).

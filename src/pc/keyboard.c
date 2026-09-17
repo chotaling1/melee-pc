@@ -21,6 +21,7 @@ static bool s_key_latched[SDL_SCANCODE_COUNT];
 static bool s_active;
 static bool s_suppressed[SDL_SCANCODE_COUNT];
 extern bool pc_menu_is_open(void);
+extern bool pc_mouse_merge(PADStatus* st);
 
 static const struct {
     SDL_Scancode key;
@@ -138,6 +139,10 @@ void pc_keyboard_apply(void) {
         if (touch_st.triggerRight > st.triggerRight) {
             st.triggerRight = touch_st.triggerRight;
         }
+        any_active = true;
+    }
+
+    if (pc_mouse_merge(&st)) {
         any_active = true;
     }
 

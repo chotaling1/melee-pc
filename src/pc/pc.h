@@ -29,6 +29,12 @@ void pc_log_line(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 typedef union SDL_Event SDL_Event;
 void pc_keyboard_event(const SDL_Event* e);
 void pc_keyboard_apply(void);
+
+/* Mouse -> menus (src/pc/mouse.c): clicks and wheel merge into the keyboard's
+ * virtual pad; pc_mouse_take_motion returns true once per mouse movement with
+ * the cursor in logical 640x480 screen space. */
+void pc_mouse_event(const SDL_Event* e);
+bool pc_mouse_take_motion(float* x, float* y);
 void pc_touch_apply(void);
 
 /* Set once the window is closed; the game loop is expected to exit. */

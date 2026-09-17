@@ -26,6 +26,7 @@
 #include <sysdolphin/baselib/lobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/random.h>
+#include <melee/mn/mnmouse.h>
 
 /// @todo .sdata2 order hack
 #ifdef MUST_MATCH
@@ -291,6 +292,18 @@ void fn_8025A310(HSD_GObj* gobj)
         return;
     }
     HSD_JObjGetTranslation(jobj, &sp1C);
+#ifdef MELEE_PC
+    // PC: a moving mouse drives the cursor (src/pc/mouse.c). The translation
+    // is local; move it by the world-space offset to the point under the mouse.
+    {
+        Vec3 cur, target;
+        lb_8000B1CC(jobj, NULL, &cur);
+        if (mnMouse_GetPlanePoint(GET_COBJ(mnStageSel_804D6C9C), &cur, &target)) {
+            sp1C.x += target.x - cur.x;
+            sp1C.y += target.y - cur.y;
+        }
+    }
+#endif
     sp1C.x = 0.03f * mnStageSel_804D6CAC + sp1C.x;
     if (-27.0F > sp1C.x) {
         sp1C.x = -27.0F;

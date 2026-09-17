@@ -41,6 +41,7 @@
 #include <sysdolphin/baselib/mobj.h>
 #include <sysdolphin/baselib/random.h>
 #include <sysdolphin/baselib/sislib.h>
+#include <melee/mn/mnmouse.h>
 
 static u8 mnCharSel_804D50C8[4] = { 1, 2, 4, 8 };
 static u8 mnCharSel_804D50CC[4] = { 1, 0, 0, 2 };
@@ -2483,6 +2484,20 @@ void mnCharSel_CursorThink(HSD_GObj* gobj)
             }
         }
 
+#ifdef MELEE_PC
+        // PC: a moving mouse drives port 1's hand (src/pc/mouse.c).
+        if (cursor->x4 == 0) {
+            Vec3 cur, target;
+            lb_8000B1CC(jobj, NULL, &cur);
+            if (mnMouse_GetPlanePoint(GET_COBJ(mnCharSel_804D6CB8), &cur,
+                                      &target))
+            {
+                cursor->xC += target.x - cur.x;
+                cursor->x10 += target.y - cur.y;
+                dx = dy = 0.0f;
+            }
+        }
+#endif
         cursor->xC = (f32) ((0.0002f * dx) + cursor->xC);
         cursor->x10 = (f32) ((0.0002f * dy) + cursor->x10);
 
