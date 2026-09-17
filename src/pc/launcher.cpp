@@ -950,6 +950,8 @@ public:
     Rml::ElementDocument* document = nullptr;
     Rml::ElementDocument* counter = nullptr;
     Rml::ElementDocument* soccer_score = nullptr;
+    Rml::ElementDocument* arena_name = nullptr;
+    const char* arena_shown = nullptr;
     int soccer_shown = -1;
     SDL_Window* window = nullptr;
     bool open = false;
@@ -1508,6 +1510,7 @@ extern "C" void pc_menu_init(SDL_Window* window) {
     port_menu.document = context->LoadDocument((resources / "port-menu.rml").string());
     port_menu.counter = context->LoadDocument((resources / "fps.rml").string());
     port_menu.soccer_score = context->LoadDocument((resources / "soccer.rml").string());
+    port_menu.arena_name = context->LoadDocument((resources / "arena-name.rml").string());
     if (!port_menu.document) {
         SDL_Log("F1 menu: could not load port-menu.rml");
         return;
@@ -1528,7 +1531,21 @@ extern "C" void pc_menu_event(const SDL_Event* event) {
 }
 extern "C" bool pc_soccer_is_active(void);
 extern "C" void pc_soccer_get_score(int* left, int* right);
+extern "C" const char* pc_arena_hovered_name(void);
 extern "C" void pc_menu_update(void) {
+    if (port_menu.arena_name) {
+        const char* name = pc_arena_hovered_name();
+        if (name != nullptr) {
+            if (name != port_menu.arena_shown) {
+                port_menu.arena_name->GetElementById("name")->SetInnerRML(
+                    std::string("Soccer: ") + name);
+                port_menu.arena_shown = name;
+            }
+            if (!port_menu.arena_name->IsVisible())
+                port_menu.arena_name->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+        } else if (port_menu.arena_name->IsVisible())
+            port_menu.arena_name->Hide();
+    }
     if (port_menu.soccer_score) {
         if (pc_soccer_is_active()) {
             int left, right;

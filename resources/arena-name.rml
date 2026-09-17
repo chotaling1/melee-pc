@@ -1,0 +1,1 @@
+<rml><head><title>Arena</title><style>body { font-family: "Liberation Sans"; font-size: 20dp; font-weight: bold; color: #ffffff; background-color: #0b101cdd; position: absolute; bottom: 12%; left: 6%; padding: 8dp 14dp; pointer-events: none; z-index: 100; }</style></head><body><span id="name">Arena</span></body></rml>

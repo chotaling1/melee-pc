@@ -12,7 +12,11 @@
 #include <melee/mp/types.h>
 #include <sysdolphin/baselib/gobj.h>
 #include <sysdolphin/baselib/forward.h>
+#include <sysdolphin/baselib/cobj.h>
 #include <sysdolphin/baselib/jobj.h>
+#include <sysdolphin/baselib/pobj.h>
+#include <sysdolphin/baselib/state.h>
+#include <sysdolphin/baselib/tev.h>
 
 #include <string.h>
 
@@ -424,4 +428,144 @@ void gmArena_Draw(void)
         arena_Rect(pl->x0, pl->y - 2.5F, pl->x1, pl->y, -1.0F,
                    a->platform_color);
     }
+}
+
+/* ---- stage select ---------------------------------------------------- */
+
+static int arena_pending;
+static int arena_hovered;
+
+void gmArena_SetPending(int id)
+{
+    arena_pending = (id >= 1 && id <= ARENA_COUNT) ? id : 0;
+}
+
+int gmArena_TakePending(void)
+{
+    int id = arena_pending;
+    arena_pending = 0;
+    return id;
+}
+
+void gmArena_SetHovered(int id)
+{
+    arena_hovered = (id >= 1 && id <= ARENA_COUNT) ? id : 0;
+}
+
+const char* pc_arena_hovered_name(void)
+{
+    return gmArena_Name(arena_hovered);
+}
+
+/// Flat vertex-colored quads: the debug quad helper lights its color, which
+/// looks wrong under the menu's lights.
+static void icon_BeginState(void)
+{
+    Mtx view;
+    HSD_StateInvalidate(-1);
+    HSD_StateInitTev();
+    GXSetColorUpdate(GX_ENABLE);
+    GXSetAlphaUpdate(GX_DISABLE);
+    GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_NOOP);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GXSetZMode(GX_ENABLE, GX_LEQUAL, GX_ENABLE);
+    GXSetZCompLoc(GX_ENABLE);
+    GXSetNumTexGens(0);
+    GXSetNumTevStages(1);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_VTX, GX_SRC_VTX,
+                  GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    GXSetCullMode(GX_CULL_NONE);
+    HSD_ClearVtxDesc();
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetCurrentMtx(0);
+    HSD_CObjGetViewingMtx(HSD_CObjGetCurrent(), view);
+    GXLoadPosMtxImm(view, 0);
+}
+
+static void icon_Rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, GXColor c)
+{
+    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+    GXPosition3f32(x0, y0, z);
+    GXColor4u8(c.r, c.g, c.b, 0xFF);
+    GXPosition3f32(x1, y0, z);
+    GXColor4u8(c.r, c.g, c.b, 0xFF);
+    GXPosition3f32(x1, y1, z);
+    GXColor4u8(c.r, c.g, c.b, 0xFF);
+    GXPosition3f32(x0, y1, z);
+    GXColor4u8(c.r, c.g, c.b, 0xFF);
+    GXEnd();
+}
+
+void gmArena_DrawIcon(int id, const Vec3* center, f32 half_w, f32 half_h,
+                      bool hovered)
+{
+    const ArenaDef* a;
+    const f32 t = WALL_THICKNESS;
+    f32 w, d, h, c, ext_x, ext_y0, ext_y1, scale, ox, oy;
+    f32 inner_w, inner_h, z;
+    int side, p;
+    GXColor frame = hovered ? (GXColor){ 0xFF, 0xD8, 0x30, 0xFF }
+                            : (GXColor){ 0x18, 0x18, 0x20, 0xFF };
+    GXColor sky = { 0x20, 0x2C, 0x48, 0xFF };
+
+    if (id < 1 || id > ARENA_COUNT) {
+        return;
+    }
+    a = &arenas[id - 1];
+    w = a->half_width;
+    d = a->goal_depth;
+    h = a->goal_height;
+    c = a->ceiling_y;
+    z = center->z;
+
+    icon_BeginState();
+    // frame, then background
+    icon_Rect(center->x - half_w, center->y - half_h, center->x + half_w,
+              center->y + half_h, z, frame);
+    inner_w = half_w - (hovered ? 0.45F : 0.3F);
+    inner_h = half_h - (hovered ? 0.45F : 0.3F);
+    icon_Rect(center->x - inner_w, center->y - inner_h, center->x + inner_w,
+              center->y + inner_h, z + 0.05F, sky);
+
+    // field diagram, fit inside the background with a small margin
+    ext_x = w + d + t;
+    ext_y0 = -t;
+    ext_y1 = c + t;
+    scale = (inner_w * 0.9F) / ext_x;
+    if ((ext_y1 - ext_y0) * scale > inner_h * 1.8F) {
+        scale = inner_h * 1.8F / (ext_y1 - ext_y0);
+    }
+    ox = center->x;
+    oy = center->y - 0.5F * (ext_y0 + ext_y1) * scale;
+    z += 0.1F;
+#define R(x0, y0, x1, y1, col)                                                \
+    icon_Rect(ox + (x0) * scale, oy + (y0) * scale, ox + (x1) * scale,       \
+              oy + (y1) * scale, z, col)
+    R(-(w + d + t), -t, w + d + t, 0.0F, a->floor_color);
+    R(-(w + t), c, w + t, c + t, a->wall_color);
+    for (side = -1; side <= 1; side += 2) {
+        f32 s = (f32) side;
+        GXColor net = side < 0 ? (GXColor){ 0xE0, 0x40, 0x40, 0xFF }
+                               : (GXColor){ 0x40, 0x70, 0xF0, 0xFF };
+        R(s < 0 ? -(w + t) : w, h, s < 0 ? -w : w + t, c + t, a->wall_color);
+        R(s < 0 ? -(w + d + t) : w, h, s < 0 ? -w : w + d + t, h + t,
+          a->wall_color);
+        R(s < 0 ? -(w + d + t) : w + d, -t, s < 0 ? -(w + d) : w + d + t,
+          h + t, a->wall_color);
+        R(s < 0 ? -(w + d) : w, 0.0F, s < 0 ? -w : w + d, h, net);
+    }
+    for (p = 0; p < a->platform_count; p++) {
+        const ArenaPlatform* pl = &a->platforms[p];
+        R(pl->x0, pl->y - 3.0F, pl->x1, pl->y, a->platform_color);
+    }
+#undef R
+
+    HSD_StateInvalidate(-1);
+    HSD_StateInitTev();
 }

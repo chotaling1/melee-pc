@@ -37,4 +37,18 @@ void gmArena_GetGoal(gmArenaGoal* goal);
 /// Draws the arena's walls, floor, ceiling and platforms (opaque pass).
 void gmArena_Draw(void);
 
+/* ---- stage select ---- */
+
+/// Arena picked on the stage select screen for the next VS match (0 = none).
+void gmArena_SetPending(int id);
+/// Returns and clears the pending arena.
+int gmArena_TakePending(void);
+/// Arena under the stage select cursor (0 = none), for the name label.
+void gmArena_SetHovered(int id);
+const char* pc_arena_hovered_name(void);
+/// Draws arena @p id's stage select icon: a framed diagram of the field
+/// centered at @p center, in the current camera's world space.
+void gmArena_DrawIcon(int id, const Vec3* center, f32 half_w, f32 half_h,
+                      bool hovered);
+
 #endif

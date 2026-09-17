@@ -931,8 +931,20 @@ static void soccer_OnMatchEnd(u8 outcome)
 
 void gmSoccer_ConfigureMatch(StartMeleeData* start)
 {
+    int picked_arena = gmArena_TakePending();
+
     soccer.active = false;
     gmArena_Select(0);
+    // An arena picked on the stage select screen is always a soccer match.
+    if (picked_arena != 0 && start->rules.stkind == St_Kind_Last &&
+        start->rules.on_match_start == NULL && start->rules.on_match_end == NULL)
+    {
+        soccer_LoadConfig();
+        gmArena_Select(picked_arena);
+        start->rules.on_match_start = soccer_OnMatchStart;
+        start->rules.on_match_end = soccer_OnMatchEnd;
+        return;
+    }
     if (!pc_is_soccer_enabled()) {
         return;
     }

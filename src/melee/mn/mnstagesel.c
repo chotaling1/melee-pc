@@ -26,6 +26,10 @@
 #include <sysdolphin/baselib/lobj.h>
 #include <sysdolphin/baselib/memory.h>
 #include <sysdolphin/baselib/random.h>
+#include <dolphin/os.h>
+#include <melee/gm/gm_1A3F.h>
+#include <melee/gm/gmarena.h>
+#include <melee/gr/forward.h>
 #include <melee/mn/mnmouse.h>
 
 /// @todo .sdata2 order hack
@@ -98,6 +102,65 @@ int mnStageSel_802599EC(void)
     return i;
 }
 
+#ifdef MELEE_PC
+/* PC: soccer arena icons (src/melee/gm/gmarena.c), a row under the
+ * Battlefield/FD row. Hovered index 0x1F + k is arena k + 1 (0x1D is Random,
+ * 0x1E "nothing hovered"). Only offered in regular VS mode. */
+#define ARENA_SEL_BASE 0x1F
+#define ARENA_SEL_HALF_W 2.9F
+#define ARENA_SEL_HALF_H 2.1F
+
+static bool arenaSel_Enabled(void)
+{
+    return gm_GetCurrentGameMode() == GM_VS;
+}
+
+static int arenaSel_Count(void)
+{
+    int n = gmArena_Count();
+    return n > 8 ? 8 : n;
+}
+
+static bool arenaSel_IsArena(int idx)
+{
+    return arenaSel_Enabled() && idx >= ARENA_SEL_BASE &&
+           idx < ARENA_SEL_BASE + arenaSel_Count();
+}
+
+/// Icon k sits under the Battlefield icon (table entry 24) at the small row's
+/// spacing, following its slide-in animation.
+static void arenaSel_IconPos(int k, Vec3* out)
+{
+    static const f32 dx[8] = { 0.0F, 5.3F, 11.0F, 16.3F,
+                               21.6F, 26.9F, 32.2F, 37.5F };
+    lb_8000B1CC(mnStageSel_803F06D0[24].x0, NULL, out);
+    out->x += dx[k];
+    out->y -= 6.1F;
+}
+
+static void arenaSel_Draw(HSD_GObj* gobj, int pass)
+{
+    static u32 passes_seen;
+    int k;
+
+    if (!arenaSel_Enabled()) {
+        return;
+    }
+    if (pass >= 0 && pass < 32 && !(passes_seen & (1U << pass))) {
+        passes_seen |= 1U << pass;
+        OSReport("[arena] stage select icon draw pass %d\n", pass);
+    }
+    // Opaque and self-contained render state, so drawing in every pass the
+    // link is rendered in is harmless.
+    for (k = 0; k < arenaSel_Count(); k++) {
+        Vec3 pos;
+        arenaSel_IconPos(k, &pos);
+        gmArena_DrawIcon(k + 1, &pos, ARENA_SEL_HALF_W, ARENA_SEL_HALF_H,
+                         mnStageSel_804D6CAE == ARENA_SEL_BASE + k);
+    }
+}
+#endif
+
 void mnStageSel_80259C28(void)
 {
     HSD_JObj* jobj;
@@ -127,6 +190,11 @@ void mnStageSel_80259C28(void)
         {
             goto skip_randomize;
         }
+#ifdef MELEE_PC
+        if (arenaSel_IsArena(mnStageSel_804D6CAE)) {
+            goto skip_randomize;
+        }
+#endif
         lbAudioAx_80024030(3);
         return;
     }
@@ -227,6 +295,13 @@ void mnStageSel_80259ED8(int id)
     if (id < 0x1E && mnStageSel_803F06D0[id].x8 >= 2) {
         do_anim(jobj, 20.0F * mnStageSel_803F06D0[id].x9);
     }
+#ifdef MELEE_PC
+    else if (arenaSel_IsArena(id))
+    {
+        // No name image exists for arenas; the PC overlay shows the name.
+        HSD_JObjSetFlagsAll(jobj, JOBJ_HIDDEN);
+    }
+#endif
 }
 
 void fn_8025A090(HSD_GObj* gobj)
@@ -336,6 +411,22 @@ void fn_8025A310(HSD_GObj* gobj)
             }
         }
     }
+#ifdef MELEE_PC
+    if (arenaSel_Enabled()) {
+        int k;
+        for (k = 0; k < arenaSel_Count(); k++) {
+            arenaSel_IconPos(k, &sp10);
+            if (sp10.x - ARENA_SEL_HALF_W < sp1C.x &&
+                sp10.x + ARENA_SEL_HALF_W > sp1C.x &&
+                sp10.y - ARENA_SEL_HALF_H < sp1C.y &&
+                sp10.y + ARENA_SEL_HALF_H > sp1C.y)
+            {
+                mnStageSel_804D6CAE = ARENA_SEL_BASE + k;
+                return;
+            }
+        }
+    }
+#endif
 }
 
 void fn_8025A560(HSD_GObj* gobj)
@@ -500,6 +591,10 @@ void mnStageSel_Scene_OnEnter(void* arg0)
         mnStageSel_804D6CAC = 0;
         mnStageSel_804D6CAD = 0;
         mnStageSel_804D6CAE = 0x1E;
+#ifdef MELEE_PC
+        gmArena_SetPending(0);
+        gmArena_SetHovered(0);
+#endif
         mnStageSel_804D50A0 = sss_data->unk_stage - 1;
         mnStageSel_804D6CA4 = 0x14;
 
@@ -511,6 +606,9 @@ void mnStageSel_Scene_OnEnter(void* arg0)
             gobj->gxlink_prios = 0x11;
             HSD_GObj_SetupProc(gobj, mn_8022BA1C, 5);
         }
+#ifdef MELEE_PC
+        GObj_SetupGXLink(GObj_Create(4, 5, 0x80), arenaSel_Draw, 4, 0x83);
+#endif
 
         {
             HSD_GObj* gobj;
@@ -830,6 +928,11 @@ static inline HSD_PadStatus* get_pad(u8 i)
 /// OnFrame
 void mnStageSel_Scene_OnFrame(void)
 {
+#ifdef MELEE_PC
+    gmArena_SetHovered(arenaSel_IsArena(mnStageSel_804D6CAE)
+                           ? mnStageSel_804D6CAE - ARENA_SEL_BASE + 1
+                           : 0);
+#endif
     if (sss_data->force_stage_id >= 0) {
         mnStageSel_804D6CAF = 2;
         sss_data->vs.start.rules.stkind = sss_data->force_stage_id;
@@ -893,6 +996,17 @@ void mnStageSel_Scene_OnFrame(void)
         gm_801A4B60();
     }
     if (mnStageSel_804D6CAF == 2) {
+#ifdef MELEE_PC
+        if (arenaSel_IsArena(mnStageSel_804D6CAE)) {
+            // Arenas are soccer fields built on Final Destination.
+            sss_data->vs.start.rules.stkind = St_Kind_Last;
+            gmArena_SetPending(mnStageSel_804D6CAE - ARENA_SEL_BASE + 1);
+            gmArena_SetHovered(0);
+            gm_801A4B60();
+            return;
+        }
+        gmArena_SetPending(0);
+#endif
         sss_data->vs.start.rules.stkind =
             mnStageSel_803F06D0[mnStageSel_804D6CAE].stkind;
         gm_801A4B60();
@@ -901,6 +1015,9 @@ void mnStageSel_Scene_OnFrame(void)
 
 void mnStageSel_Scene_OnExit(UNUSED void* exit_data)
 {
+#ifdef MELEE_PC
+    gmArena_SetHovered(0);
+#endif
     if (mnStageSel_804D6C94 != NULL) {
         lbArchive_80016EFC(mnStageSel_804D6C94);
         mnStageSel_804D6C94 = NULL;
