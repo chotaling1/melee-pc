@@ -34,6 +34,7 @@ void pc_keyboard_apply(void);
  * virtual pad; pc_mouse_take_motion returns true once per mouse movement with
  * the cursor in logical 640x480 screen space. */
 void pc_mouse_event(const SDL_Event* e);
+void pc_mouse_update(void);
 bool pc_mouse_take_motion(float* x, float* y);
 void pc_touch_apply(void);
 

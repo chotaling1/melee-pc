@@ -13,6 +13,7 @@
  * covers that whole framebuffer.
  */
 #include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_mouse.h>
 #include <aurora/event.h>
 #include <dolphin/gx/GXAurora.h>
 #include <dolphin/pad.h>
@@ -140,6 +141,20 @@ void pc_mouse_event(const SDL_Event* e) {
     }
     default:
         return;
+    }
+}
+
+/* Called once per frame: the OS cursor is hidden while the game owns the
+ * mouse and shown while the F1 menu (which takes the mouse) is open. */
+void pc_mouse_update(void) {
+    static int s_cursor_hidden = -1;
+    int hide = !pc_menu_is_open();
+    if (hide != s_cursor_hidden) {
+        if (hide)
+            SDL_HideCursor();
+        else
+            SDL_ShowCursor();
+        s_cursor_hidden = hide;
     }
 }
 
