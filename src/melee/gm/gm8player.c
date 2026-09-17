@@ -13,9 +13,9 @@
 
 #include <pc/pc.h>
 
-/// First player slot used for the extra fighters. Slots 0-3 are controller
-/// ports and slots 4-5 belong to Camera Mode (cm/camera.c:1628, :1644).
-#define GM8P_EXTRA_BASE 6
+/// First player slot used for the extra fighters: straight after the four
+/// controller ports. See GM_MAX_PLAYERS for why there is no gap here.
+#define GM8P_EXTRA_BASE 4
 #define GM8P_EXTRA_COUNT (GM_MAX_PLAYERS - GM8P_EXTRA_BASE)
 
 /// Deliberately boring picks: no transforming characters (Zelda/Sheik) and no
@@ -86,10 +86,10 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
         const PlayerInitData* donor = occupied_slot[i % occupied];
 
         *p = *donor;
-        /* fn_8016D8AC derives player_id as slot - 1, and pltrick.c:341
-         * asserts player_id < 8 (the hit table packs it into an 8-bit mask).
-         * Ports 1-4 hold ids 0-3, so the extras take 4-7. */
-        p->slot = (u8) (GM8P_EXTRA_BASE - 1 + i);
+        /* Leave slot at 0 so fn_8016D8AC assigns player_id from the array
+         * index, which is what the CSS does for ports 1-4 and what
+         * ft/fighter.c:695 expects. */
+        p->slot = 0;
         p->slot_type = Gm_PKind_Cpu;
         p->cpu_kind = 0;
         p->cpu_level = 5;

@@ -9,12 +9,16 @@
 /// @todo Put in proper places. ::GM_MAX_PLAYERS is ::Gm_Player_NumMax but
 /// needs to be used for array size declarations.
 /// @{
-/* PC (8-player VS): slots 0-3 are controller ports 1-4 and slots 4-5 keep
- * their vanilla special meaning (slot 4 merges every port's input for Camera
- * Mode, slot 5 reads no input at all — see cm/camera.c:1628 and :1644), so the
- * four extra players are appended at slots 6-9 rather than renumbering those.
+/* PC (8-player VS): 8 is a hard ceiling, not a preference. A fighter's
+ * player_id is its slot index (ft/fighter.c:695) and pltrick.c:341 asserts
+ * player_id < 8 because the hit table packs players into an 8-bit mask, so
+ * the slots must be exactly 0-7 with no gaps.
+ *
+ * That costs slots 4 and 5 their vanilla special meaning: slot 4 merged every
+ * port's input for Camera Mode and slot 5 read none (cm/camera.c:1628, :1644).
+ * Camera Mode and an 8-player match cannot both own those slots; players win.
  * Vanilla value was 6. */
-#define GM_MAX_PLAYERS 10
+#define GM_MAX_PLAYERS 8
 
 /* The player count baked into data on the disc. Never follows GM_MAX_PLAYERS:
  * the ISO's arrays are whatever the retail game shipped, so any DISC_STRUCT
