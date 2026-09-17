@@ -142,3 +142,24 @@ be updated to match.
 - Open: how the 5th-8th players are controlled (4 GameCube ports exist, so
   keyboard/extra SDL pads?); whether the CSS gets 8 panels or another layout;
   what happens to team colors, the HUD and the results screen.
+- Status 2026-09-17: slot capacity widened, build green (`0d1bd88`). Nothing
+  populates the new slots yet, and the game has not been run since the change.
+- Findings 2026-09-17:
+  - Slots 4-5 are not spare: slot 4 merges every port's input for Camera Mode
+    and slot 5 reads none (`src/melee/cm/camera.c:1628`, `:1644`). The four
+    extra players are appended at 6-9 so those keep working.
+  - `GM_MAX_PLAYERS` also sized an on-disc array (`struct gm_evstage_table`,
+    `src/melee/gm/gmevent.c:95`); the DISC_STRUCT assert in `src/pc/disc.h:146`
+    caught it. On-disc layouts now use `GM_DISC_MAX_PLAYERS` (still 6).
+  - Memory is not the constraint: MEM1 is 96 MB (`src/pc/pc.h:14`) against the
+    GameCube's 24 MB, which is what makes 8 loaded characters plausible.
+  - Most engine loops already run `i < GM_MAX_PLAYERS` and skip inactive slots
+    via `Gm_PKind_NA` (e.g. `src/melee/gm/gmvs.c:563`), so they scale for free.
+  - Input is the hard wall: `PAD_CHANMAX` is 4 in vendored aurora
+    (`extern/aurora/include/dolphin/pad.h:17`) with ~10 arrays sized by it in
+    `pad.cpp`. Players 5-8 need either a widened PAD layer (conflicts with
+    upstream merges) or a separate port-side input path.
+  - Presentation still assumes 4: HUD (`src/melee/if/ifall.c:132`, `:220`) and
+    CSS (`src/melee/mn/mncharsel.c:3447`, `:5470`).
+- Next: spawn 8 (1 human + 7 CPU) through a debug path to find out what breaks
+  at runtime — camera framing, HUD, GObj limits — before any CSS or input work.
