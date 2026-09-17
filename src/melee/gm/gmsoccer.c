@@ -1,4 +1,5 @@
 #include "gmsoccer.h"
+#include "gmarena.h"
 
 #include <placeholder.h>
 
@@ -85,6 +86,7 @@ enum {
     P_GOAL_BOTTOM_Y,
     P_GOAL_TOP_Y,
     P_SHOW_GOALS,
+    P_ARENA,
     P_COUNT,
 };
 
@@ -116,6 +118,7 @@ static SoccerParam params[P_COUNT] = {
     { "goal_bottom_y", -40.0F, "bottom of the goal" },
     { "goal_top_y", 35.0F, "crossbar height" },
     { "show_goals", 1, "draw the goal frames and nets (0/1)" },
+    { "arena", 0, "soccer arena on Final Destination: 0 = open FD, 1 Classic Pitch, 2 Sky Box, 3 Wide Field, 4 Tiny Cage (goal_* keys are ignored in arenas)" },
 };
 
 #define PARAM(id) (params[id].value)
@@ -759,6 +762,7 @@ static void soccer_DrawGoals(HSD_GObj* gobj, int pass)
         soccer_Log("goal draw pass %d", pass);
     }
     if (pass == 0) {
+        gmArena_Draw();
         soccer_DrawBall();
     }
     if (PARAM(P_SHOW_GOALS) == 0.0F) {
@@ -887,12 +891,22 @@ static void soccer_OnMatchStart(void)
     memset(&soccer, 0, sizeof(soccer));
     soccer.log = fopen(SOCCER_LOG_PATH, "w");
     soccer_LoadConfig();
+    if (gmArena_Current() != 0) {
+        gmArenaGoal goal;
+        gmArena_GetGoal(&goal);
+        PARAM(P_GOAL_LINE_X) = goal.line_x;
+        PARAM(P_GOAL_BACK_X) = goal.back_x;
+        PARAM(P_GOAL_BOTTOM_Y) = goal.bottom_y;
+        PARAM(P_GOAL_TOP_Y) = goal.top_y;
+    }
     soccer.active = true;
     soccer.respawn_timer = 60;
     ball_states[BALL_MS_AIR].anim_id = (enum_t) PARAM(P_BALL_AIR_ANIM);
     ball_states[BALL_MS_GROUND].anim_id = (enum_t) PARAM(P_BALL_GROUND_ANIM);
 
-    soccer_Log("match start");
+    soccer_Log("match start, arena %d (%s)", gmArena_Current(),
+               gmArena_Current() != 0 ? gmArena_Name(gmArena_Current())
+                                      : "open Final Destination");
     for (i = 0; i < P_COUNT; i++) {
         soccer_Log("  %s = %g", params[i].key, params[i].value);
     }
@@ -908,6 +922,7 @@ static void soccer_OnMatchEnd(u8 outcome)
                soccer.score[SIDE_LEFT], soccer.score[SIDE_RIGHT]);
     soccer.active = false;
     soccer.ball = NULL;
+    gmArena_Select(0);
     if (soccer.log != NULL) {
         fclose(soccer.log);
         soccer.log = NULL;
@@ -917,6 +932,7 @@ static void soccer_OnMatchEnd(u8 outcome)
 void gmSoccer_ConfigureMatch(StartMeleeData* start)
 {
     soccer.active = false;
+    gmArena_Select(0);
     if (!pc_is_soccer_enabled()) {
         return;
     }
@@ -924,6 +940,9 @@ void gmSoccer_ConfigureMatch(StartMeleeData* start)
         OSReport("[soccer] enabled, but the stage is not Final Destination\n");
         return;
     }
+    // The arena must be known before the stage loads its collision.
+    soccer_LoadConfig();
+    gmArena_Select((int) PARAM(P_ARENA));
     if (start->rules.on_match_start != NULL ||
         start->rules.on_match_end != NULL)
     {

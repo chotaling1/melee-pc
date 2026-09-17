@@ -10,6 +10,7 @@
 #include "grzakogenerator.h"
 #include "inlines.h"
 #include "stage.h"
+#include <melee/gm/gmarena.h>
 #include <melee/cm/camera.h>
 #include <melee/gm/gm_unsplit.h>
 #include <melee/lb/lb_00B0.h>
@@ -344,6 +345,9 @@ static void grLast_8021A9C4(Ground_GObj* gobj)
     u32 i;
 
     Ground_InitMapColl(gobj->hsd_obj, gp->map_id);
+#ifdef MELEE_PC
+    gmArena_OnMapInit(gobj);
+#endif
     grAnime_801C8138(gobj, gp->map_id, 0);
     gp->u.map.xC4_b0 = true;
     for (i = 0; i < ARRAY_SIZE(gp->u.map.lv_gobj); i++) {

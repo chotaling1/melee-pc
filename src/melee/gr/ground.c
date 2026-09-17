@@ -10,6 +10,7 @@
 #include "grcastle.h"
 #include "grcorneria.h"
 #include "grdatfiles.h"
+#include <melee/gm/gmarena.h>
 #include "grdisplay.h"
 #include "grfigure1.h"
 #include "grfigure2.h"
@@ -516,6 +517,12 @@ void Ground_801C0800(StageIdPair* pair)
         psInitDataBankLoad(0x1E, stage_info.map_ptcl, stage_info.map_texg, 0,
                            0);
     }
+#ifdef MELEE_PC
+    // Soccer arenas replace FD's collision (src/melee/gm/gmarena.c).
+    if (stage_info.grkind == Gr_Kind_Last) {
+        stage_info.coll_data = gmArena_BuildColl(stage_info.coll_data);
+    }
+#endif
     mpLibLoad(stage_info.coll_data);
     mpLib_80058820();
     Ground_801C1E94();
@@ -1618,6 +1625,11 @@ bool Ground_801C2D24(enum_t arg0, Vec3* arg1)
     Vec3 sp20;
     Vec3 sp14;
     u32 _;
+#ifdef MELEE_PC
+    if (stage_info.grkind == Gr_Kind_Last && gmArena_GetPoint(arg0, arg1)) {
+        return true;
+    }
+#endif
     if (arg0 == 8) {
         Ground_801C2D24(4, arg1);
         Ground_801C2D24(5, &sp20);
@@ -1668,6 +1680,14 @@ bool Ground_InitMapColl(HSD_JObj* jobj, s32 arg1)
     GrJoint* cur;
     int i;
     int max;
+#ifdef MELEE_PC
+    // Arena collision is static and not tied to FD's platform model; skip
+    // binding FD's joints to it (they would move the arena with the model).
+    if (stage_info.grkind == Gr_Kind_Last && gmArena_Current() != 0) {
+        Ground_801C3214(arg1);
+        return true;
+    }
+#endif
     if (temp_r3 != NULL) {
         cur = DP(GrJoint, MAP_GOBJ_DESC(temp_r3->unk4, arg1)->unk20);
         max = MAP_GOBJ_DESC(temp_r3->unk4, arg1)->unk24;
