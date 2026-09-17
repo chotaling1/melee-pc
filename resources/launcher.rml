@@ -116,6 +116,10 @@
               <div class="description"><h3>Free camera</h3><p>Unlock camera rotation and zoom distance in pause mode.</p></div>
               <button id="free-camera">Normal</button>
             </div>
+            <div class="setting">
+              <div class="description"><h3>Soccer (mod)</h3><p>VS on Final Destination: hit the ball into a goal past the ledge. First to 3.</p></div>
+              <button id="soccer">Off</button>
+            </div>
           </div>
           <div id="page-audio" class="page">
             <div class="setting">

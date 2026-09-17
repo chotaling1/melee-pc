@@ -1,0 +1,1 @@
+<rml><head><title>Soccer</title><style>body { font-family: "Liberation Sans"; font-size: 22dp; font-weight: bold; color: #ffffff; background-color: #0b101cdd; position: absolute; top: 8dp; left: 50%; margin-left: -70dp; width: 140dp; height: 30dp; padding: 5dp; text-align: center; pointer-events: none; z-index: 100; }</style></head><body><span id="score">0 - 0</span></body></rml>

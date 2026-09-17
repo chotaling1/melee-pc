@@ -158,7 +158,7 @@ class Launcher final : public Rml::EventListener {
             return {"volume", "music-volume", "sfx-volume", "mute", "fps", "scale", "check-updates",
                 "check-now", "settings-discord"};
         case 2:
-            return {"unlock-all", "frozen-stadium", "free-camera"};
+            return {"unlock-all", "frozen-stadium", "free-camera", "soccer"};
         default:
             return {};
         }
@@ -263,6 +263,7 @@ class Launcher final : public Rml::EventListener {
         text("hud-mode", prefs.hud_mode == 0 ? "Classic (4:3)" : "Wide (16:9)");
         text("frozen-stadium", prefs.frozen_stadium ? "Hazardless" : "Normal");
         text("free-camera", prefs.free_camera ? "Free" : "Normal");
+        text("soccer", prefs.soccer ? "On" : "Off");
         text("unlock-all", prefs.unlock_all ? "Unlocked" : "Normal");
         text("backend", backend_name(prefs.backend));
         slider("volume", prefs.volume * 100.0f);
@@ -474,6 +475,11 @@ class Launcher final : public Rml::EventListener {
             save();
             refresh_settings();
             element("free-camera")->Focus();
+        } else if (id == "soccer") {
+            prefs.soccer = !prefs.soccer;
+            save();
+            refresh_settings();
+            element("soccer")->Focus();
         } else if (id == "unlock-all") {
             prefs.unlock_all = !prefs.unlock_all;
             save();
@@ -943,6 +949,8 @@ class PortMenu final : public Rml::EventListener {
 public:
     Rml::ElementDocument* document = nullptr;
     Rml::ElementDocument* counter = nullptr;
+    Rml::ElementDocument* soccer_score = nullptr;
+    int soccer_shown = -1;
     SDL_Window* window = nullptr;
     bool open = false;
     // Set while the menu writes its own widgets: suppresses the Change and
@@ -989,7 +997,7 @@ public:
             return {"volume", "music-volume", "sfx-volume", "mute", "fps", "scale",
                 "port-check-update"};
         case 2:
-            return {"unlock-all", "frozen-stadium", "free-camera"};
+            return {"unlock-all", "frozen-stadium", "free-camera", "soccer"};
         default: {
             std::vector<std::string> ids{"pad-port"};
             for (int i = 0; i < PAD_BUTTON_COUNT; ++i)
@@ -1096,6 +1104,7 @@ public:
         label("hud-mode", prefs.hud_mode == 0 ? "Classic (4:3)" : "Wide (16:9)");
         label("frozen-stadium", prefs.frozen_stadium ? "Hazardless" : "Normal");
         label("free-camera", prefs.free_camera ? "Free" : "Normal");
+        label("soccer", prefs.soccer ? "On" : "Off");
         label("unlock-all", prefs.unlock_all ? "Unlocked" : "Normal");
         label("backend", backend_name(prefs.backend));
         slider("volume", prefs.volume * 100.0f);
@@ -1277,6 +1286,8 @@ public:
             prefs.frozen_stadium = !prefs.frozen_stadium;
         } else if (id == "free-camera") {
             prefs.free_camera = !prefs.free_camera;
+        } else if (id == "soccer") {
+            prefs.soccer = !prefs.soccer;
         } else if (id == "unlock-all") {
             prefs.unlock_all = !prefs.unlock_all;
         } else if (id == "backend") {
@@ -1496,6 +1507,7 @@ extern "C" void pc_menu_init(SDL_Window* window) {
     port_menu.window = window;
     port_menu.document = context->LoadDocument((resources / "port-menu.rml").string());
     port_menu.counter = context->LoadDocument((resources / "fps.rml").string());
+    port_menu.soccer_score = context->LoadDocument((resources / "soccer.rml").string());
     if (!port_menu.document) {
         SDL_Log("F1 menu: could not load port-menu.rml");
         return;
@@ -1514,7 +1526,23 @@ extern "C" void pc_menu_event(const SDL_Event* event) {
     if (event)
         port_menu.gamepad(*event);
 }
+extern "C" bool pc_soccer_is_active(void);
+extern "C" void pc_soccer_get_score(int* left, int* right);
 extern "C" void pc_menu_update(void) {
+    if (port_menu.soccer_score) {
+        if (pc_soccer_is_active()) {
+            int left, right;
+            pc_soccer_get_score(&left, &right);
+            if (!port_menu.soccer_score->IsVisible())
+                port_menu.soccer_score->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+            if (left * 100 + right != port_menu.soccer_shown) {
+                port_menu.soccer_score->GetElementById("score")->SetInnerRML(
+                    std::to_string(left) + " - " + std::to_string(right));
+                port_menu.soccer_shown = left * 100 + right;
+            }
+        } else if (port_menu.soccer_score->IsVisible())
+            port_menu.soccer_score->Hide();
+    }
     if (port_menu.counter) {
         if (prefs.fps) {
             if (!port_menu.counter->IsVisible())
@@ -1541,6 +1569,9 @@ extern "C" bool pc_is_frozen_stadium_enabled(void) {
 }
 extern "C" bool pc_is_free_camera_enabled(void) {
     return prefs.free_camera;
+}
+extern "C" bool pc_is_soccer_enabled(void) {
+    return prefs.soccer;
 }
 extern "C" int pc_get_hud_mode(void) {
     return prefs.hud_mode;
