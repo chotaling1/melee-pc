@@ -129,3 +129,16 @@ select screen.
   regular VS; picking one starts a soccer match there.
 - Follow-ups: nicer arena visuals (textures/backgrounds), arena name on the
   game's own name plate, more fields.
+
+## Unsorted
+
+### 8-player VS (queued 2026-09-17)
+VS mode with up to 8 players at once. The character select screen would need to
+be updated to match.
+- Touches: `GM_MAX_PLAYERS` is 6 (`src/melee/gm/forward.h:12`, with
+  `Gm_Player_NumMax` at `:194`) and is baked into the match structs
+  (`src/melee/gm/types.h:623`, `:680`, `:683`); the CSS hardcodes 4 ports in
+  places (`src/melee/mn/mncharsel.c:3447`, `:5470`).
+- Open: how the 5th-8th players are controlled (4 GameCube ports exist, so
+  keyboard/extra SDL pads?); whether the CSS gets 8 panels or another layout;
+  what happens to team colors, the HUD and the results screen.
