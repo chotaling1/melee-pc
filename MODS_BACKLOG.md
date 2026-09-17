@@ -1,6 +1,33 @@
 # Mods backlog
 
 Work queued for the `mods` branch. Newest decisions first within each item.
+Sections are in priority order.
+
+## Dev tools
+
+### Mouse control for menus (queued 2026-09-17, top priority)
+Drive in-game menus with the mouse for development. No game-side mouse
+handling exists today; aurora forwards SDL mouse events only to ImGui/RmlUi
+(the F1 menu already takes the mouse).
+- Phase 0, plumbing: `src/pc/mouse.c` with `pc_mouse_event` called next to
+  `pc_keyboard_event` (`src/pc/vi.c`), ignored while the F1 menu is open.
+  Store the cursor in the game's logical 640x480 space (undo aurora's
+  letterbox: `calculate_present_viewport` in `extern/aurora/lib/webgpu/gpu.cpp`,
+  content size from `AuroraGetRenderSize`). Merge into the port-0 virtual pad
+  in `pc_keyboard_apply` (`src/pc/keyboard.c`, next to the touch merge):
+  left click = A, right click = B, wheel = up/down (list menus then scroll via
+  `mn_80229624`).
+- Phase 1, pointer menus: character select hand (`CSSCursorData` xC/x10,
+  `mnCharSel_CursorThink`, write before the stick delta is applied) and stage
+  select cursor (JObj translate in `fn_8025A310`) follow the mouse while it is
+  moving, so stick/keyboard still work. Mouse to menu world coords: calibrate
+  against the menu camera with `lbVector_WorldToScreen` (project two z=0
+  points, invert the linear map) rather than hardcoding the projection.
+  Clicks then pick characters, drop coins and pick stages through the
+  existing A/B logic.
+- Phase 2, click-to-select in list menus: main menu first (project option
+  JObjs, set `mn_804A04F0.hovered_selection`, run the normal hover refresh);
+  other `mn*` screens need per-screen hit tests.
 
 ## Soccer
 
