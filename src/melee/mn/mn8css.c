@@ -88,12 +88,20 @@
 /* Panel row, in CSS world units. The grid sits in y -1..20 and the vanilla
  * doors used the space below it; the hand reaches about x +-35, y -22..25. */
 #define PANEL_TOP (-3.8F)
-#define PANEL_BOTTOM (-19.6F)
-#define PANEL_LEFT (-31.7F)
-#define PANEL_PITCH (7.95F)
-#define PANEL_WIDTH (7.35F)
+/* Lowest a panel may reach; the screen's bottom edge is near y -29. */
+#define PANEL_FLOOR (-26.5F)
+/* The row: panels share it, centred, with a gap between; as few fighters as
+ * are in get panels as wide as PANEL_MAX_W. */
+#define ROW_LEFT (-31.7F)
+#define ROW_RIGHT (31.3F)
+#define ROW_GAP (0.6F)
+#define PANEL_NARROW_W (7.35F) /* eight across */
+#define PANEL_MAX_W (14.0F)
+#define ADD_TILE_W (5.6F)
 #define PANEL_BORDER (0.3F)
 #define PANEL_Z (0.0F)
+/* Pseudo-slot for the Add tile in hover/tile lookups. */
+#define TILE_ADD N_SLOTS
 /* Opaque tray behind the panels, covering the vanilla player row from just
  * under the grid to past the bottom of the screen. */
 #define TRAY_TOP (-1.1F)
@@ -103,20 +111,27 @@
  * line offsets below are in text pixels. */
 #define TEXT_FONT_X (0.036F)
 #define TEXT_FONT_Y (0.042F)
-#define TEXT_LINE_TAG (20.0F)
-#define TEXT_LINE_NAME (262.0F)
-#define TEXT_LINE_STATUS (305.0F)
-#define TEXT_LINE_COLOR (342.0F)
+/* Text scales up with the panel, to at most this. */
+#define TEXT_MAX_SCALE (1.4F)
+/* Line positions in world units at scale 1: the P-tag from the panel top,
+ * the rest below the portrait. */
+#define LINE_TAG (0.84F)
+#define LINE_NAME (0.5F)
+#define LINE_STATUS (2.3F)
+#define LINE_COLOR (3.85F)
+#define TEXT_BLOCK_H (5.05F) /* portrait bottom to panel bottom */
 
-/* Portrait box inside a panel, in world units below PANEL_TOP: between the
- * P-tag line and the name. The image keeps its aspect ratio inside it. */
+/* Portrait: starts below the P-tag, keeps the door art's 136x188 aspect, and
+ * may crop its sides down to PORTRAIT_MIN_CROP of the width on narrow
+ * panels rather than shrink. */
 #define PORTRAIT_TOP (1.4F)
-#define PORTRAIT_BOTTOM (10.5F)
 #define PORTRAIT_MARGIN_X (0.35F)
+#define PORTRAIT_ASPECT (136.0F / 188.0F)
+#define PORTRAIT_MIN_CROP (0.75F)
 
 #define HAND_MIN_X (-35.0F)
 #define HAND_MAX_X (35.0F)
-#define HAND_MIN_Y (-22.0F)
+#define HAND_MIN_Y (-27.0F)
 #define HAND_MAX_Y (25.0F)
 #define HAND_SPEED (0.9F)
 #define STICK_DEADZONE (0.25F)
@@ -220,6 +235,18 @@ static struct {
     u32 banner_timer;
     HSD_TObj* portrait_tobj; ///< the door-1 portrait's animated texture
     Mn8Portrait portrait[N_SLOTS];
+    /* Row layout, rebuilt when a slot joins or leaves (mn8Css_Relayout). */
+    struct {
+        s8 slot; ///< slot, or TILE_ADD
+        f32 x0;
+        f32 w;
+    } tile[N_SLOTS + 1];
+    int n_tiles;
+    int layout_key; ///< joined-slot mask the layout was built for, -1 none
+    f32 panel_h;
+    f32 text_scale;
+    f32 portrait_h; ///< full (uncropped) portrait height
+    HSD_Text* add_text;
     int text_ctx;
     HSD_Text* text[N_SLOTS];
     Mn8Slot slot[N_SLOTS];
@@ -453,25 +480,46 @@ static bool mn8Css_CanStart(void)
 
 /* ---- layout ------------------------------------------------------------- */
 
-static f32 mn8Css_PanelLeft(int k)
+/// Tile showing slot @p k (or TILE_ADD), or -1 when it has none.
+static int mn8Css_TileOf(int k)
 {
-    return PANEL_LEFT + PANEL_PITCH * (f32) k;
-}
+    int t;
 
-static int mn8Css_PanelAt(f32 x, f32 y)
-{
-    int k;
-
-    if (y > PANEL_TOP || y < PANEL_BOTTOM) {
-        return -1;
-    }
-    for (k = 0; k < N_SLOTS; k++) {
-        f32 x0 = mn8Css_PanelLeft(k);
-        if (x >= x0 && x <= x0 + PANEL_WIDTH) {
-            return k;
+    for (t = 0; t < mn8css.n_tiles; t++) {
+        if (mn8css.tile[t].slot == k) {
+            return t;
         }
     }
     return -1;
+}
+
+/// Slot (or TILE_ADD) under world (@p x, @p y), or -1.
+static int mn8Css_PanelAt(f32 x, f32 y)
+{
+    int t;
+
+    if (y > PANEL_TOP || y < PANEL_TOP - mn8css.panel_h) {
+        return -1;
+    }
+    for (t = 0; t < mn8css.n_tiles; t++) {
+        f32 x0 = mn8css.tile[t].x0;
+        if (x >= x0 && x <= x0 + mn8css.tile[t].w) {
+            return mn8css.tile[t].slot;
+        }
+    }
+    return -1;
+}
+
+/// Centre x of slot @p k's tile, or of where its port's panel would sit.
+static f32 mn8Css_SlotCenterX(int k)
+{
+    int t = mn8Css_TileOf(k);
+
+    if (t >= 0) {
+        return mn8css.tile[t].x0 + mn8css.tile[t].w * 0.5F;
+    }
+    return ROW_LEFT + (PANEL_NARROW_W + ROW_GAP) * (f32) k +
+           PANEL_NARROW_W * 0.5F;
 }
 
 /* ---- drawing ------------------------------------------------------------ */
@@ -675,15 +723,17 @@ static void mn8Css_DrawPortrait(int k)
 {
     const Mn8Portrait* pt = &mn8css.portrait[k];
     HSD_ImageDesc* img = pt->image;
+    int t = mn8Css_TileOf(k);
     GXTexObj tex;
-    f32 box_w = PANEL_WIDTH - 2.0F * PORTRAIT_MARGIN_X;
-    f32 box_h = PORTRAIT_BOTTOM - PORTRAIT_TOP;
+    f32 box_w;
+    f32 h = mn8css.portrait_h;
     f32 w;
-    f32 h;
+    f32 u0 = 0.0F;
+    f32 u1 = 1.0F;
     f32 x0;
     f32 y0;
 
-    if (img == NULL || img->width == 0 || img->height == 0) {
+    if (img == NULL || t < 0 || img->width == 0 || img->height == 0) {
         return;
     }
     switch (img->format) {
@@ -710,25 +760,27 @@ static void mn8Css_DrawPortrait(int k)
                     GX_FALSE, GX_ANISO_1);
     GXLoadTexObj(&tex, GX_TEXMAP0);
 
-    /* Fit, keeping the aspect ratio, centred in the box. */
-    w = box_w;
-    h = w * (f32) img->height / (f32) img->width;
-    if (h > box_h) {
-        h = box_h;
-        w = h * (f32) img->width / (f32) img->height;
+    /* Full height; crop the sides evenly if the panel is narrower. */
+    box_w = mn8css.tile[t].w - 2.0F * PORTRAIT_MARGIN_X;
+    w = h * (f32) img->width / (f32) img->height;
+    if (w > box_w) {
+        f32 keep = box_w / w;
+        u0 = 0.5F - keep * 0.5F;
+        u1 = 0.5F + keep * 0.5F;
+        w = box_w;
     }
-    x0 = mn8Css_PanelLeft(k) + (PANEL_WIDTH - w) * 0.5F;
-    y0 = PANEL_TOP - PORTRAIT_TOP - (box_h - h) * 0.5F;
+    x0 = mn8css.tile[t].x0 + (mn8css.tile[t].w - w) * 0.5F;
+    y0 = PANEL_TOP - PORTRAIT_TOP * mn8css.text_scale;
 
     GXBegin(GX_QUADS, GX_VTXFMT0, 4);
     GXPosition3f32(x0, y0, PANEL_Z);
-    GXTexCoord2f32(0.0F, 0.0F);
+    GXTexCoord2f32(u0, 0.0F);
     GXPosition3f32(x0 + w, y0, PANEL_Z);
-    GXTexCoord2f32(1.0F, 0.0F);
+    GXTexCoord2f32(u1, 0.0F);
     GXPosition3f32(x0 + w, y0 - h, PANEL_Z);
-    GXTexCoord2f32(1.0F, 1.0F);
+    GXTexCoord2f32(u1, 1.0F);
     GXPosition3f32(x0, y0 - h, PANEL_Z);
-    GXTexCoord2f32(0.0F, 1.0F);
+    GXTexCoord2f32(u0, 1.0F);
     GXEnd();
 }
 
@@ -737,8 +789,10 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     static const GXColor frame_plain = { 0x0C, 0x0C, 0x10, 0xFF };
     static const GXColor frame_hover = { 0xE0, 0xE2, 0xEA, 0xFF };
     static const GXColor tray = { 0x12, 0x16, 0x24, 0xFF };
+    static const GXColor add_fill = { 0x26, 0x2A, 0x36, 0xFF };
     int k;
     int p;
+    int t;
 
     /* Pass 2 only. The labels draw in pass 2 as well (HSD_SisLib_803A84BC
      * skips every other pass) and their gobjs come after this one on the same
@@ -750,12 +804,14 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     mn8Css_BeginQuads();
     /* Tray over the whole vanilla player row, whichever model draws it. */
     mn8Css_Rect(-45.0F, TRAY_BOTTOM, 45.0F, TRAY_TOP, 0.0F, tray);
-    for (k = 0; k < N_SLOTS; k++) {
-        f32 x0 = mn8Css_PanelLeft(k);
-        f32 x1 = x0 + PANEL_WIDTH;
+    for (t = 0; t < mn8css.n_tiles; t++) {
+        f32 x0 = mn8css.tile[t].x0;
+        f32 x1 = x0 + mn8css.tile[t].w;
+        f32 y1 = PANEL_TOP - mn8css.panel_h;
         GXColor frame = frame_plain;
         f32 b = PANEL_BORDER;
 
+        k = mn8css.tile[t].slot;
         /* Held by a hand: that hand's colour, thick. Else white on hover. */
         for (p = 0; p < N_PORTS; p++) {
             const Mn8Hand* h = &mn8css.hand[p];
@@ -772,9 +828,9 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
             }
         }
 
-        mn8Css_Rect(x0, PANEL_BOTTOM, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
-        mn8Css_Rect(x0 + b, PANEL_BOTTOM + b, x1 - b, PANEL_TOP - b, PANEL_Z,
-                    mn8Css_PanelColor(k));
+        mn8Css_Rect(x0, y1, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
+        mn8Css_Rect(x0 + b, y1 + b, x1 - b, PANEL_TOP - b, PANEL_Z,
+                    k == TILE_ADD ? add_fill : mn8Css_PanelColor(k));
     }
     mn8Css_BeginTexQuads();
     for (k = 0; k < N_SLOTS; k++) {
@@ -784,35 +840,167 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
 
 /* ---- text --------------------------------------------------------------- */
 
-static void mn8Css_CreateText(int k)
+/// A label box over tile @p t, font scaled with the panel.
+static HSD_Text* mn8Css_NewTileText(int t)
 {
-    f32 box_w = PANEL_WIDTH / TEXT_FONT_X;
-    f32 box_h = (PANEL_TOP - PANEL_BOTTOM) / TEXT_FONT_Y;
+    f32 fx = TEXT_FONT_X * mn8css.text_scale;
+    f32 fy = TEXT_FONT_Y * mn8css.text_scale;
     HSD_Text* text = HSD_SisLib_803A6754(0, mn8css.text_ctx);
-    char tag[8];
 
     text->x4C = 1;
     text->default_fitting = 1;
     text->default_alignment = 1;
     text->default_kerning = 1;
-    text->font_size.x = TEXT_FONT_X;
-    text->font_size.y = TEXT_FONT_Y;
+    text->font_size.x = fx;
+    text->font_size.y = fy;
     /* The text canvas runs y downward: world y maps to -pos_y, the same flip
      * the vanilla name plates apply. */
-    text->pos_x = mn8Css_PanelLeft(k);
+    text->pos_x = mn8css.tile[t].x0;
     text->pos_y = -PANEL_TOP;
     text->pos_z = 0.0F;
-    text->box_size_x = box_w;
-    text->box_size_y = box_h;
+    text->box_size_x = mn8css.tile[t].w / fx;
+    text->box_size_y = mn8css.panel_h / fy;
+    return text;
+}
+
+/// Text-canvas y (pixels) of a line @p world_y below the panel top.
+static f32 mn8Css_LineY(f32 world_y)
+{
+    return world_y / (TEXT_FONT_Y * mn8css.text_scale);
+}
+
+static void mn8Css_CreateText(int t)
+{
+    int k = mn8css.tile[t].slot;
+    HSD_Text* text = mn8Css_NewTileText(t);
+    f32 cx = text->box_size_x * 0.5F;
+    f32 s = mn8css.text_scale;
+    f32 below = PORTRAIT_TOP * s + mn8css.portrait_h;
+    char tag[8];
 
     snprintf(tag, sizeof(tag), "P%d", k + 1);
-    HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_TAG, "%s", tag);
-    HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_NAME, "%s", "-");
-    HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_STATUS, "%s", "-");
-    HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_COLOR, "%s", " ");
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(LINE_TAG * s), "%s", tag);
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(below + LINE_NAME * s), "%s",
+                        "-");
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(below + LINE_STATUS * s),
+                        "%s", "-");
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(below + LINE_COLOR * s), "%s",
+                        " ");
     mn8css.text[k] = text;
-    /* force the first refresh to rewrite both lines */
+    /* force the first refresh to rewrite every line */
     mn8css.shown[k].kind = 0xFF;
+}
+
+static void mn8Css_CreateAddText(int t)
+{
+    HSD_Text* text = mn8Css_NewTileText(t);
+    f32 cx = text->box_size_x * 0.5F;
+    f32 mid = mn8css.panel_h * 0.5F;
+
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(mid - 1.2F), "%s", "+");
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(mid + 0.6F), "%s", "Add");
+    mn8css.add_text = text;
+}
+
+/// Lay the row out again if who is in has changed: one panel per joined
+/// slot in slot order, then an Add tile while there is room for more. Panels
+/// widen (to PANEL_MAX_W) as there are fewer of them; height, portrait and
+/// text follow from the width.
+static void mn8Css_Relayout(void)
+{
+    int key = 0;
+    int n_panels = 0;
+    bool add;
+    f32 avail;
+    f32 w;
+    f32 total;
+    f32 x;
+    f32 pw;
+    int k;
+    int t;
+
+    for (k = 0; k < N_SLOTS; k++) {
+        if (mn8css.slot[k].kind != SLOT_OFF) {
+            key |= 1 << k;
+            n_panels++;
+        }
+    }
+    if (key == mn8css.layout_key) {
+        return;
+    }
+    mn8css.layout_key = key;
+    add = n_panels < N_SLOTS;
+
+    /* Widths. */
+    avail = (ROW_RIGHT - ROW_LEFT) - (add ? ADD_TILE_W + ROW_GAP : 0.0F);
+    w = n_panels > 0
+            ? (avail - ROW_GAP * (f32) (n_panels - 1)) / (f32) n_panels
+            : PANEL_MAX_W;
+    if (w > PANEL_MAX_W) {
+        w = PANEL_MAX_W;
+    }
+    mn8css.text_scale = w / PANEL_NARROW_W;
+    if (mn8css.text_scale < 1.0F) mn8css.text_scale = 1.0F;
+    if (mn8css.text_scale > TEXT_MAX_SCALE) mn8css.text_scale = TEXT_MAX_SCALE;
+
+    /* Portrait as tall as the width allows (with the permitted crop), then
+     * as tall as the floor allows; the panel wraps it. */
+    pw = w - 2.0F * PORTRAIT_MARGIN_X;
+    mn8css.portrait_h = pw / (PORTRAIT_ASPECT * PORTRAIT_MIN_CROP);
+    {
+        f32 room = (PANEL_TOP - PANEL_FLOOR) -
+                   (PORTRAIT_TOP + TEXT_BLOCK_H) * mn8css.text_scale;
+        if (mn8css.portrait_h > room) {
+            mn8css.portrait_h = room;
+        }
+    }
+    mn8css.panel_h = (PORTRAIT_TOP + TEXT_BLOCK_H) * mn8css.text_scale +
+                     mn8css.portrait_h;
+
+    /* Positions, centred on the row. */
+    total = w * (f32) n_panels + ROW_GAP * (f32) (n_panels - 1);
+    if (add) {
+        total += (n_panels > 0 ? ROW_GAP : 0.0F) + ADD_TILE_W;
+    }
+    x = (ROW_LEFT + ROW_RIGHT) * 0.5F - total * 0.5F;
+    mn8css.n_tiles = 0;
+    for (k = 0; k < N_SLOTS; k++) {
+        if (!(key & (1 << k))) {
+            continue;
+        }
+        t = mn8css.n_tiles++;
+        mn8css.tile[t].slot = (s8) k;
+        mn8css.tile[t].x0 = x;
+        mn8css.tile[t].w = w;
+        x += w + ROW_GAP;
+    }
+    if (add) {
+        t = mn8css.n_tiles++;
+        mn8css.tile[t].slot = TILE_ADD;
+        mn8css.tile[t].x0 = x;
+        mn8css.tile[t].w = ADD_TILE_W;
+    }
+
+    /* Labels: rebuilt for the new boxes. */
+    for (k = 0; k < N_SLOTS; k++) {
+        if (mn8css.text[k] != NULL) {
+            HSD_SisLib_803A5CC4(mn8css.text[k]);
+            mn8css.text[k] = NULL;
+        }
+    }
+    if (mn8css.add_text != NULL) {
+        HSD_SisLib_803A5CC4(mn8css.add_text);
+        mn8css.add_text = NULL;
+    }
+    for (t = 0; t < mn8css.n_tiles; t++) {
+        if (mn8css.tile[t].slot == TILE_ADD) {
+            mn8Css_CreateAddText(t);
+        } else {
+            mn8Css_CreateText(t);
+        }
+    }
+    pc_log_line("[8css] layout: %d panel(s)%s, %.2f wide, %.2f tall",
+                n_panels, add ? " + Add" : "", w, mn8css.panel_h);
 }
 
 /// Panel label for the slot's character. '/' and '&' are control characters
@@ -858,6 +1046,9 @@ static void mn8Css_RefreshText(void)
         Mn8Slot* shown = &mn8css.shown[k];
 
         mn8css.slot[k].teams = mn8Css_Teams();
+        if (mn8css.text[k] == NULL) {
+            continue;
+        }
         if (shown->kind == s->kind && shown->ckind == s->ckind &&
             shown->level == s->level && shown->costume == s->costume &&
             shown->team == s->team && shown->teams == s->teams)
@@ -1017,6 +1208,38 @@ static void mn8Css_ClickPanel(int port, int k)
     }
 }
 
+/// A on the Add tile: join, if this hand's own port is not in yet; else a
+/// CPU in the first free slot (P5-P8 first, then ports with nobody holding
+/// a controller), which the hand grabs so its next pick lands there.
+static void mn8Css_ClickAdd(int port)
+{
+    static const u8 order[N_SLOTS] = { 4, 5, 6, 7, 0, 1, 2, 3 };
+    Mn8Hand* h = &mn8css.hand[port];
+    int i;
+
+    if (mn8css.slot[port].kind == SLOT_OFF) {
+        mn8css.slot[port].kind = SLOT_HMN;
+        h->target = (s8) port;
+        lbAudioAx_800237A8(SFX_DOOR_OPEN, 0x7F, 0x40);
+        return;
+    }
+    for (i = 0; i < N_SLOTS; i++) {
+        int k = order[i];
+        if (mn8css.slot[k].kind != SLOT_OFF) {
+            continue;
+        }
+        if (k < N_PORTS && mn8css.hand[k].shown) {
+            continue; /* that controller's own seat */
+        }
+        mn8css.slot[k].kind = SLOT_CPU;
+        mn8css.slot[k].ckind = ChKind_None;
+        h->target = (s8) k;
+        lbAudioAx_800237A8(SFX_DOOR_OPEN, 0x7F, 0x40);
+        return;
+    }
+    lbAudioAx_80024030(3);
+}
+
 /// A on character @p ckind.
 static void mn8Css_Pick(int port, int ckind)
 {
@@ -1092,6 +1315,8 @@ static bool mn8Css_HandInput(int port)
                     port + 1, h->x, h->y, h->hover, ckind, h->target + 1);
         if (h->on_sign) {
             mn8Css_ToggleTeams();
+        } else if (h->hover == TILE_ADD) {
+            mn8Css_ClickAdd(port);
         } else if (h->hover >= 0) {
             mn8Css_ClickPanel(port, h->hover);
         } else if (mn8Css_IsPlayable(ckind)) {
@@ -1189,7 +1414,7 @@ static void mn8Css_CoinsThink(void)
             /* New pick: drop it in the middle of the icon, flying in from
              * the panel. */
             if (c->ckind == ChKind_None) {
-                c->dx = mn8Css_PanelLeft(k) + PANEL_WIDTH * 0.5F;
+                c->dx = mn8Css_SlotCenterX(k);
                 c->dy = PANEL_TOP;
             }
             c->x = (l + r) * 0.5F;
@@ -1300,6 +1525,7 @@ static void mn8Css_InputThink(HSD_GObj* gobj)
     for (p = 0; p < N_PORTS; p++) {
         mn8Css_PoseHand(p);
     }
+    mn8Css_Relayout();
     mn8Css_CoinsThink();
     mn8Css_BannerThink();
     mn8Css_ResolvePortraits();
@@ -1447,30 +1673,35 @@ static void mn8Css_BuildScene(void)
      * land on top of them. */
     gobj = GObj_Create(4, 5, 0x80);
     GObj_SetupGXLink(gobj, mn8Css_Draw, 1, 0x80);
+    /* The previous visit's labels went with its text context. */
     for (i = 0; i < N_SLOTS; i++) {
-        mn8Css_CreateText(i);
+        mn8css.text[i] = NULL;
     }
+    mn8css.add_text = NULL;
+    mn8css.layout_key = -1;
+    mn8Css_Relayout();
     {
         /* How-to line in the gap between the grid (bottom y -1) and the
          * panels (top y PANEL_TOP). No '/' or '&': see mn8Css_PanelName. */
         HSD_Text* hint = HSD_SisLib_803A6754(0, mn8css.text_ctx);
-        f32 w = 2.0F * -PANEL_LEFT;
+        f32 w = 70.0F;
 
         hint->x4C = 1;
         hint->default_fitting = 1;
         hint->default_alignment = 1;
         hint->default_kerning = 1;
-        hint->font_size.x = TEXT_FONT_X * 0.8F;
-        hint->font_size.y = TEXT_FONT_Y * 0.8F;
-        hint->pos_x = PANEL_LEFT;
+        hint->font_size.x = TEXT_FONT_X * 0.7F;
+        hint->font_size.y = TEXT_FONT_Y * 0.7F;
+        hint->pos_x = -35.0F;
         hint->pos_y = 1.6F;
         hint->pos_z = 0.0F;
         hint->box_size_x = w / hint->font_size.x;
         hint->box_size_y = 60.0F;
         HSD_SisLib_803A6B98(hint, hint->box_size_x * 0.5F, 0.0F, "%s",
-                            "A on a character: pick   A on a panel: grab it "
-                            "or HMN, CPU, Off   X and Y: color or team   "
-                            "L and R: level   hold B: back   Start: go");
+                            "A on a character: pick   A on a panel: grab it, "
+                            "again for HMN, CPU or Off   A on Add: join or add "
+                            "a CPU   X and Y: color or team   L and R: level   "
+                            "hold B: back");
     }
 
     /* A coin per slot, on the grid, under the hands. */
@@ -1515,7 +1746,7 @@ static void mn8Css_BuildScene(void)
         HSD_JObjAnimAll(h->jobj);
         HSD_ForeachAnim(h->jobj, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
                         AOBJ_ARG_AOV, NULL);
-        h->x = mn8Css_PanelLeft(i) + PANEL_WIDTH * 0.5F;
+        h->x = mn8Css_SlotCenterX(i);
         h->y = HAND_START_Y;
         h->target = (s8) i;
         h->hover = -1;
