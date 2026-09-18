@@ -4371,6 +4371,21 @@ bool mnCharSel_PcIconBounds(int ckind, f32* l, f32* r, f32* u, f32* d)
     return true;
 }
 
+/// Frame of the door portrait (costume_joint texture animation) showing
+/// @p ckind in @p costume, as mnCharSel_8025E284 computes it; -1 if none.
+int mnCharSel_PcPortraitFrame(int ckind, int costume)
+{
+    int i = mnCharSel_PcIconOf(ckind);
+
+    return i < 0 ? -1 : icons[i].ft_hudindex + costume * 0x1E;
+}
+
+/// Door 1's portrait joint in the `menu` model.
+int mnCharSel_PcPortraitJoint(void)
+{
+    return mnCharSel_803F0DFC.doors[0].costume_joint;
+}
+
 /// The announcer calls out @p ckind, as a coin drop does on this screen.
 void mnCharSel_PcAnnounce(int ckind)
 {

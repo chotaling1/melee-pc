@@ -62,6 +62,7 @@
 #include <sysdolphin/baselib/archive.h>
 #include <sysdolphin/baselib/cobj.h>
 #include <sysdolphin/baselib/controller.h>
+#include <sysdolphin/baselib/dobj.h>
 #include <sysdolphin/baselib/fog.h>
 #include <sysdolphin/baselib/gobj.h>
 #include <sysdolphin/baselib/gobjgxlink.h>
@@ -69,10 +70,12 @@
 #include <sysdolphin/baselib/gobjproc.h>
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/lobj.h>
+#include <sysdolphin/baselib/mobj.h>
 #include <sysdolphin/baselib/random.h>
 #include <sysdolphin/baselib/sislib.h>
 #include <sysdolphin/baselib/state.h>
 #include <sysdolphin/baselib/tev.h>
+#include <sysdolphin/baselib/tobj.h>
 
 #include <pc/pc.h>
 
@@ -101,9 +104,15 @@
 #define TEXT_FONT_X (0.036F)
 #define TEXT_FONT_Y (0.042F)
 #define TEXT_LINE_TAG (20.0F)
-#define TEXT_LINE_NAME (150.0F)
-#define TEXT_LINE_STATUS (250.0F)
-#define TEXT_LINE_COLOR (320.0F)
+#define TEXT_LINE_NAME (262.0F)
+#define TEXT_LINE_STATUS (305.0F)
+#define TEXT_LINE_COLOR (342.0F)
+
+/* Portrait box inside a panel, in world units below PANEL_TOP: between the
+ * P-tag line and the name. The image keeps its aspect ratio inside it. */
+#define PORTRAIT_TOP (1.4F)
+#define PORTRAIT_BOTTOM (10.5F)
+#define PORTRAIT_MARGIN_X (0.35F)
 
 #define HAND_MIN_X (-35.0F)
 #define HAND_MAX_X (35.0F)
@@ -165,6 +174,14 @@ typedef struct Mn8Slot {
     u8 teams;   ///< copy of is_teams, only so the label refresh sees a toggle
 } Mn8Slot;
 
+/// The door-portrait image a panel shows, pulled out of the `menu` model's
+/// portrait joint (see mn8Css_ResolvePortraits).
+typedef struct Mn8Portrait {
+    int frame; ///< texture-animation frame resolved, -1 for none
+    HSD_ImageDesc* image;
+    HSD_Tlut* tlut;
+} Mn8Portrait;
+
 typedef struct Mn8Coin {
     HSD_JObj* jobj;
     f32 x;  ///< resting place on the icon
@@ -201,6 +218,8 @@ static struct {
     Mn8Coin coin[N_SLOTS];
     HSD_JObj* banner;
     u32 banner_timer;
+    HSD_TObj* portrait_tobj; ///< the door-1 portrait's animated texture
+    Mn8Portrait portrait[N_SLOTS];
     int text_ctx;
     HSD_Text* text[N_SLOTS];
     Mn8Slot slot[N_SLOTS];
@@ -540,6 +559,179 @@ static void mn8Css_Rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, GXColor c)
     GXEnd();
 }
 
+/// First texture with an animation in @p jobj's own subtree.
+static HSD_TObj* mn8Css_FindAnimTObj(HSD_JObj* jobj)
+{
+    HSD_JObj* child;
+
+    if (jobj == NULL) {
+        return NULL;
+    }
+    if (union_type_dobj(jobj)) {
+        HSD_DObj* dobj;
+        for (dobj = jobj->u.dobj; dobj != NULL; dobj = dobj->next) {
+            HSD_TObj* tobj;
+            if (dobj->mobj == NULL) {
+                continue;
+            }
+            for (tobj = dobj->mobj->tobj; tobj != NULL; tobj = tobj->next) {
+                if (tobj->aobj != NULL && tobj->imagetbl != NULL) {
+                    return tobj;
+                }
+            }
+        }
+    }
+    if (jobj->flags & JOBJ_INSTANCE) {
+        return NULL;
+    }
+    for (child = jobj->child; child != NULL; child = child->next) {
+        HSD_TObj* tobj = mn8Css_FindAnimTObj(child);
+        if (tobj != NULL) {
+            return tobj;
+        }
+    }
+    return NULL;
+}
+
+/// Point each panel at its portrait image. The door-1 portrait joint is
+/// driven to each slot's frame in turn, as mnCharSel_8025D5AC drives it for
+/// its door, and the image and palette it lands on are kept; the joint
+/// itself stays hidden.
+static void mn8Css_ResolvePortraits(void)
+{
+    HSD_TObj* tobj = mn8css.portrait_tobj;
+    HSD_JObj* jobj;
+    int k;
+
+    if (tobj == NULL) {
+        return;
+    }
+    lb_80011E24(mn8css.menu, &jobj, mnCharSel_PcPortraitJoint(), -1);
+    for (k = 0; k < N_SLOTS; k++) {
+        const Mn8Slot* s = &mn8css.slot[k];
+        Mn8Portrait* pt = &mn8css.portrait[k];
+        int frame = -1;
+
+        if (s->kind != SLOT_OFF && s->ckind != ChKind_None) {
+            frame = mnCharSel_PcPortraitFrame(s->ckind, mn8Css_MatchColor(s));
+        }
+        if (frame == pt->frame) {
+            continue;
+        }
+        pt->frame = frame;
+        pt->image = NULL;
+        pt->tlut = NULL;
+        if (frame < 0) {
+            continue;
+        }
+        HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim,
+                        AOBJ_ARG_AF, (f32) frame);
+        HSD_JObjAnimAll(jobj);
+        HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                        AOBJ_ARG_AOV, NULL);
+        pt->image = tobj->imagedesc;
+        pt->tlut = tobj->tlut_no != (u8) -1 && tobj->tluttbl != NULL
+                       ? tobj->tluttbl[tobj->tlut_no]
+                       : tobj->tlut;
+        if (pt->image != NULL) {
+            pc_log_line("[8css] P%d portrait frame %d: %dx%d fmt %d tlut %p",
+                        k + 1, frame, pt->image->width, pt->image->height,
+                        (int) pt->image->format, (void*) pt->tlut);
+        }
+    }
+}
+
+/// Alpha-blended textured quads for the portraits.
+static void mn8Css_BeginTexQuads(void)
+{
+    Mtx view;
+
+    HSD_StateInvalidate(-1);
+    HSD_StateInitTev();
+    GXSetColorUpdate(GX_ENABLE);
+    GXSetAlphaUpdate(GX_DISABLE);
+    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA,
+                   GX_LO_NOOP);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GXSetZMode(GX_DISABLE, GX_ALWAYS, GX_DISABLE);
+    GXSetNumChans(0);
+    GXSetNumTexGens(1);
+    GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
+    GXSetNumTevStages(1);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
+    GXSetTevOp(GX_TEVSTAGE0, GX_REPLACE);
+    GXSetCullMode(GX_CULL_NONE);
+    HSD_ClearVtxDesc();
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_TEX0, GX_DIRECT);
+    GXSetCurrentMtx(0);
+    HSD_CObjGetViewingMtx(HSD_CObjGetCurrent(), view);
+    GXLoadPosMtxImm(view, 0);
+}
+
+static void mn8Css_DrawPortrait(int k)
+{
+    const Mn8Portrait* pt = &mn8css.portrait[k];
+    HSD_ImageDesc* img = pt->image;
+    GXTexObj tex;
+    f32 box_w = PANEL_WIDTH - 2.0F * PORTRAIT_MARGIN_X;
+    f32 box_h = PORTRAIT_BOTTOM - PORTRAIT_TOP;
+    f32 w;
+    f32 h;
+    f32 x0;
+    f32 y0;
+
+    if (img == NULL || img->width == 0 || img->height == 0) {
+        return;
+    }
+    switch (img->format) {
+    case GX_TF_C4:
+    case GX_TF_C8:
+    case GX_TF_C14X2: {
+        GXTlutObj tlut;
+        if (pt->tlut == NULL) {
+            return;
+        }
+        GXInitTlutObj(&tlut, pt->tlut->lut, pt->tlut->fmt,
+                      pt->tlut->n_entries);
+        GXLoadTlut(&tlut, GX_TLUT0);
+        GXInitTexObjCI(&tex, DP(void, img->image_ptr), img->width,
+                       img->height, img->format, GX_CLAMP, GX_CLAMP,
+                       GX_FALSE, GX_TLUT0);
+    } break;
+    default:
+        GXInitTexObj(&tex, DP(void, img->image_ptr), img->width, img->height,
+                     img->format, GX_CLAMP, GX_CLAMP, GX_FALSE);
+        break;
+    }
+    GXInitTexObjLOD(&tex, GX_LINEAR, GX_LINEAR, 0.0F, 0.0F, 0.0F, GX_FALSE,
+                    GX_FALSE, GX_ANISO_1);
+    GXLoadTexObj(&tex, GX_TEXMAP0);
+
+    /* Fit, keeping the aspect ratio, centred in the box. */
+    w = box_w;
+    h = w * (f32) img->height / (f32) img->width;
+    if (h > box_h) {
+        h = box_h;
+        w = h * (f32) img->width / (f32) img->height;
+    }
+    x0 = mn8Css_PanelLeft(k) + (PANEL_WIDTH - w) * 0.5F;
+    y0 = PANEL_TOP - PORTRAIT_TOP - (box_h - h) * 0.5F;
+
+    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+    GXPosition3f32(x0, y0, PANEL_Z);
+    GXTexCoord2f32(0.0F, 0.0F);
+    GXPosition3f32(x0 + w, y0, PANEL_Z);
+    GXTexCoord2f32(1.0F, 0.0F);
+    GXPosition3f32(x0 + w, y0 - h, PANEL_Z);
+    GXTexCoord2f32(1.0F, 1.0F);
+    GXPosition3f32(x0, y0 - h, PANEL_Z);
+    GXTexCoord2f32(0.0F, 1.0F);
+    GXEnd();
+}
+
 static void mn8Css_Draw(HSD_GObj* gobj, int pass)
 {
     static const GXColor frame_plain = { 0x0C, 0x0C, 0x10, 0xFF };
@@ -583,6 +775,10 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
         mn8Css_Rect(x0, PANEL_BOTTOM, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
         mn8Css_Rect(x0 + b, PANEL_BOTTOM + b, x1 - b, PANEL_TOP - b, PANEL_Z,
                     mn8Css_PanelColor(k));
+    }
+    mn8Css_BeginTexQuads();
+    for (k = 0; k < N_SLOTS; k++) {
+        mn8Css_DrawPortrait(k);
     }
 }
 
@@ -1106,6 +1302,7 @@ static void mn8Css_InputThink(HSD_GObj* gobj)
     }
     mn8Css_CoinsThink();
     mn8Css_BannerThink();
+    mn8Css_ResolvePortraits();
     mn8Css_RefreshText();
 }
 
@@ -1219,6 +1416,19 @@ static void mn8Css_BuildScene(void)
         HSD_JObjAnimAll(sign);
         HSD_ForeachAnim(sign, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
                         AOBJ_ARG_AOV, NULL);
+    }
+    {
+        HSD_JObj* src;
+
+        lb_80011E24(menu, &src, mnCharSel_PcPortraitJoint(), -1);
+        mn8css.portrait_tobj = mn8Css_FindAnimTObj(src);
+        pc_log_line("[8css] portrait joint 0x%X: jobj %p, animated tobj %p",
+                    mnCharSel_PcPortraitJoint(), (void*) src,
+                    (void*) mn8css.portrait_tobj);
+        for (i = 0; i < N_SLOTS; i++) {
+            mn8css.portrait[i].frame = -1;
+            mn8css.portrait[i].image = NULL;
+        }
     }
     /* The grid model carries the vanilla player row too; clear it out so
      * only the panels below are left there. Children only: the root spans

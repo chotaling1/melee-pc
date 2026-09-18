@@ -36,6 +36,8 @@ f32 mnCharSel_PcModeFrame(int match_type, bool teams);
 bool mnCharSel_PcIconBounds(int ckind, f32* l, f32* r, f32* u, f32* d);
 void mnCharSel_PcAnnounce(int ckind);
 void mnCharSel_PcEnterSfx(int match_type);
+int mnCharSel_PcPortraitFrame(int ckind, int costume);
+int mnCharSel_PcPortraitJoint(void);
 #endif
 
 #endif
