@@ -241,3 +241,12 @@ animations, sounds.
 - Open: reuse vanilla art (two door-model instances scaled to fit eight) or
   original art (can't ship Nintendo's; new models need an HSDRaw pipeline);
   how much of vanilla's door open/close animation carries over at half size.
+- Decided (Chuck, 2026-09-17): do tiers 1 and 2 (sounds, Ready to Fight
+  banner, coins, panel motion; real portraits). No original art: the "tier 3"
+  look is the vanilla portraits and door animations, just scaled down to fit.
+- Decided (Chuck, 2026-09-17): door width scales with how many fighters are
+  in, so two players get big doors and eight get narrow ones.
+- Open: the door model holds all four doors in one tree, so free per-door
+  width and placement may mean positioning each door's joints individually
+  rather than scaling two whole instances; width-only scaling would stretch
+  the portraits, so decide between uniform scale and cropping.
