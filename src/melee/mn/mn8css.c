@@ -55,6 +55,7 @@
 #include <melee/lb/lbcardgame.h>
 #include <melee/lb/lbcardnew.h>
 #include <melee/lb/lbdvd.h>
+#include <melee/lb/lbvector.h>
 #include <melee/lb/lblanguage.h>
 #include <melee/lb/types.h>
 #include <melee/pl/forward.h>
@@ -158,6 +159,15 @@
 #define HAND_COLOR_JOINT 3
 #define HAND_POSE_POINT 0
 #define HAND_POSE_OPEN 2
+/* Where the pointing fingertip sits relative to the hand model's root: the
+ * visible joints hang 2 units towards the camera, and the tip is right of
+ * and just below the root (measured on screen in 16:9: 5.2 right, 0.9 down
+ * at the menu plane, near the centre). A hand's (x, y) is the spot on the
+ * menu plane the fingertip marks; mn8Css_PoseHand places the model so the
+ * tip is drawn over it. */
+#define HAND_TIP_X (5.3F)
+#define HAND_TIP_Y (-0.9F)
+#define HAND_TIP_Z (2.0F)
 
 #define N_TEAMS 3
 
@@ -1240,11 +1250,34 @@ static void mn8Css_PoseHand(int port)
     HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
                     AOBJ_ARG_AOV, NULL);
 
-    /* The model's own Z is not on the menu plane, so pin it, and re-run its
-     * animation to refresh the matrices. */
-    HSD_JObjSetTranslateX(h->jobj, h->x);
-    HSD_JObjSetTranslateY(h->jobj, h->y);
-    HSD_JObjSetTranslateZ(h->jobj, 0.0F);
+    /* Put the fingertip over (x, y). The tip is nearer the camera than the
+     * menu plane, so find the point at its depth on the same line of sight
+     * (screen position of (x, y, 0), back onto the plane z = HAND_TIP_Z) and
+     * hang the model from there. The root stays pinned at z 0, as
+     * mnCharSel_CursorThink pins it; re-run its animation to refresh the
+     * matrices. */
+    {
+        HSD_CObj* cobj = GET_COBJ(mn8css.camera);
+        static const Vec3 ux = { 1.0F, 0.0F, 0.0F };
+        static const Vec3 uy = { 0.0F, 1.0F, 0.0F };
+        Vec3 spot = { h->x, h->y, 0.0F };
+        Vec3 ref = { h->x, h->y, HAND_TIP_Z };
+        Vec3 tip = ref;
+        Vec3 scr;
+        f32 s = pc_widescreen_frame_scale();
+        f32 cx = 0.5F * (cobj->viewport.xmin + cobj->viewport.xmax);
+
+        lbVector_WorldToScreen(cobj, &spot, &scr, 0);
+        /* mnMouse_ScreenToPlane takes on-screen (widened) coordinates. */
+        if (!mnMouse_ScreenToPlane(cobj, cx + (scr.x - cx) / s, scr.y, &ref,
+                                   &ux, &uy, &tip))
+        {
+            tip = ref;
+        }
+        HSD_JObjSetTranslateX(h->jobj, tip.x - HAND_TIP_X);
+        HSD_JObjSetTranslateY(h->jobj, tip.y - HAND_TIP_Y);
+        HSD_JObjSetTranslateZ(h->jobj, 0.0F);
+    }
     HSD_JObjAnimAll(h->jobj);
 }
 
