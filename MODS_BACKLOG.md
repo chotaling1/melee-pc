@@ -188,6 +188,17 @@ be updated to match.
     portraits from the disc at runtime.
   - Picking 8 *different* characters also needs ARAM raised past 16 MB; looks
     feasible since MEM1 sits at >= `0x20000000` (see `MEMORY.md`).
+- Status 2026-09-17: **CPU panels P5-P8 on the vanilla CSS, confirmed working
+  by Chuck** (`46c55d9`). D-pad Left/Right picks a panel, Up/Down cycles the
+  character (grid order, Off included), L/R sets level; overlay is
+  `resources/eight-player.rml`. ARAM raised to 32 MB (`93a9298`) so the extras
+  can be any character. Also added `gm8Player_SanitizeSlots` in the VS scene
+  setup so modes that build player lists by hand never see live slots 6-7.
+  Not yet confirmed: eight *unique* characters under 32 MB, and a
+  Classic/Adventure run with the slot guard.
+- Follow-ups for the panels: hold-to-repeat when cycling characters; the
+  mouse wheel sends D-pad taps on the CSS, so scrolling changes the focused
+  panel's character.
 - Remaining regardless: camera framing for 8; the other ~140 literal `< 6`
   player loops outside `gmvs.c`/`if/`; widescreen HUD spread for 7-8.
 
