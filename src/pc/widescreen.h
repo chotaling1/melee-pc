@@ -22,6 +22,8 @@ void pc_widescreen_set_mode(int mode);
 void pc_widescreen_set_scene(bool supported);
 void pc_widescreen_update(void);
 float pc_widescreen_scale(void);
+/* Same widening, regardless of the current render pass. */
+float pc_widescreen_frame_scale(void);
 
 /* The horizontal scale setupNormalCamera actually divided this camera's
  * projection by. Anything that has to agree with the submitted matrix --

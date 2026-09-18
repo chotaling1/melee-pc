@@ -69,6 +69,16 @@ float pc_widescreen_scale(void) {
     return fmaxf(1.0f, ((float)width / height) / ORIGINAL_ASPECT);
 }
 
+/* pc_widescreen_scale for code outside the draw passes (layout, input): the
+ * current framebuffer's widening whatever pass is active. */
+float pc_widescreen_frame_scale(void) {
+    u32 width, height;
+    AuroraGetRenderSize(&width, &height);
+    if (!width || !height)
+        return 1;
+    return fmaxf(1.0f, ((float)width / height) / ORIGINAL_ASPECT);
+}
+
 float pc_widescreen_cobj_scale(struct HSD_CObj* cobj) {
     if (cobj != NULL && (HSD_CObjGetFlags(cobj) & PC_COBJ_FILL_FRAME)) {
         return 1;

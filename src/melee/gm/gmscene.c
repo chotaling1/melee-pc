@@ -191,11 +191,11 @@ void gm_801A4B88(struct GameSceneInfo* info)
 {
     gm_804D6720 = info;
 #ifdef TARGET_PC
-    /* Every mode fights in a VS scene: Classic, Adventure, All-Star, Event,
-     * Stadium and Special Smash all arrive here with GS_VS. Menus, results and
-     * cutscenes keep the original aspect. */
-    pc_widescreen_set_scene(info && (info->scene_kind == GS_VS ||
-        info->scene_kind == GS_SUDDEN_DEATH || info->scene_kind == GS_TRAINING));
+    /* Mod: the aspect setting applies to every scene, menus included, not
+     * just the VS scene every mode fights in. Widening only divides each
+     * camera's horizontal projection, so a menu simply shows more of its
+     * world at the sides. */
+    pc_widescreen_set_scene(info != NULL);
 #endif
 }
 

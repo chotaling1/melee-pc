@@ -78,6 +78,7 @@
 #include <sysdolphin/baselib/tobj.h>
 
 #include <pc/pc.h>
+#include <pc/widescreen.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -91,9 +92,10 @@
 /* Lowest a panel may reach; the screen's bottom edge is near y -29. */
 #define PANEL_FLOOR (-26.5F)
 /* The row: panels share it, centred, with a gap between; as few fighters as
- * are in get panels as wide as PANEL_MAX_W. */
-#define ROW_LEFT (-31.7F)
-#define ROW_RIGHT (31.3F)
+ * are in get panels as wide as PANEL_MAX_W. ROW_HALF_W is at the original
+ * 73:60 aspect; widescreen widens it with the frame (mn8Css_RowHalfW). */
+#define ROW_CENTER (-0.2F)
+#define ROW_HALF_W (31.5F)
 #define ROW_GAP (0.6F)
 #define PANEL_NARROW_W (7.35F) /* eight across */
 #define PANEL_MAX_W (14.0F)
@@ -128,9 +130,10 @@
 #define PORTRAIT_MARGIN_X (0.35F)
 #define PORTRAIT_ASPECT (136.0F / 188.0F)
 #define PORTRAIT_MIN_CROP (0.75F)
+/* Portraits shorter than this uncropped get their sides cropped instead. */
+#define PORTRAIT_MIN_H (10.0F)
 
-#define HAND_MIN_X (-35.0F)
-#define HAND_MAX_X (35.0F)
+#define HAND_MAX_X (35.0F) /* at 73:60; widened with the frame */
 #define HAND_MIN_Y (-27.0F)
 #define HAND_MAX_Y (25.0F)
 #define HAND_SPEED (0.9F)
@@ -243,6 +246,7 @@ static struct {
     } tile[N_SLOTS + 1];
     int n_tiles;
     int layout_key; ///< joined-slot mask the layout was built for, -1 none
+    f32 layout_scale; ///< widescreen widening it was built for
     f32 panel_h;
     f32 text_scale;
     f32 portrait_h; ///< full (uncropped) portrait height
@@ -480,6 +484,12 @@ static bool mn8Css_CanStart(void)
 
 /* ---- layout ------------------------------------------------------------- */
 
+/// Half the row's width: wider with the frame in widescreen.
+static f32 mn8Css_RowHalfW(void)
+{
+    return ROW_HALF_W * pc_widescreen_frame_scale();
+}
+
 /// Tile showing slot @p k (or TILE_ADD), or -1 when it has none.
 static int mn8Css_TileOf(int k)
 {
@@ -518,8 +528,8 @@ static f32 mn8Css_SlotCenterX(int k)
     if (t >= 0) {
         return mn8css.tile[t].x0 + mn8css.tile[t].w * 0.5F;
     }
-    return ROW_LEFT + (PANEL_NARROW_W + ROW_GAP) * (f32) k +
-           PANEL_NARROW_W * 0.5F;
+    return ROW_CENTER - mn8Css_RowHalfW() +
+           (PANEL_NARROW_W + ROW_GAP) * (f32) k + PANEL_NARROW_W * 0.5F;
 }
 
 /* ---- drawing ------------------------------------------------------------ */
@@ -804,7 +814,7 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     }
     mn8Css_BeginQuads();
     /* Tray over the whole vanilla player row, whichever model draws it. */
-    mn8Css_Rect(-45.0F, TRAY_BOTTOM, 45.0F, TRAY_TOP, 0.0F, tray);
+    mn8Css_Rect(-80.0F, TRAY_BOTTOM, 80.0F, TRAY_TOP, 0.0F, tray);
     for (t = 0; t < mn8css.n_tiles; t++) {
         f32 x0 = mn8css.tile[t].x0;
         f32 x1 = x0 + mn8css.tile[t].w;
@@ -938,14 +948,17 @@ static void mn8Css_Relayout(void)
             n_panels++;
         }
     }
-    if (key == mn8css.layout_key) {
+    if (key == mn8css.layout_key &&
+        mn8css.layout_scale == pc_widescreen_frame_scale())
+    {
         return;
     }
     mn8css.layout_key = key;
+    mn8css.layout_scale = pc_widescreen_frame_scale();
     add = n_panels < N_SLOTS;
 
     /* Widths. */
-    avail = (ROW_RIGHT - ROW_LEFT) - (add ? ADD_TILE_W + ROW_GAP : 0.0F);
+    avail = 2.0F * mn8Css_RowHalfW() - (add ? ADD_TILE_W + ROW_GAP : 0.0F);
     w = n_panels > 0
             ? (avail - ROW_GAP * (f32) (n_panels - 1)) / (f32) n_panels
             : PANEL_MAX_W;
@@ -956,10 +969,17 @@ static void mn8Css_Relayout(void)
     if (mn8css.text_scale < 1.0F) mn8css.text_scale = 1.0F;
     if (mn8css.text_scale > TEXT_MAX_SCALE) mn8css.text_scale = TEXT_MAX_SCALE;
 
-    /* Portrait as tall as the width allows (with the permitted crop), then
-     * as tall as the floor allows; the panel wraps it. */
+    /* Portrait as tall as the width allows uncropped; if that is too short,
+     * crop the sides (to at most PORTRAIT_MIN_CROP) to reach PORTRAIT_MIN_H.
+     * Then no taller than the floor allows; the panel wraps it. */
     pw = w - 2.0F * PORTRAIT_MARGIN_X;
-    mn8css.portrait_h = pw / (PORTRAIT_ASPECT * PORTRAIT_MIN_CROP);
+    mn8css.portrait_h = pw / PORTRAIT_ASPECT;
+    if (mn8css.portrait_h < PORTRAIT_MIN_H) {
+        mn8css.portrait_h = pw / (PORTRAIT_ASPECT * PORTRAIT_MIN_CROP);
+        if (mn8css.portrait_h > PORTRAIT_MIN_H) {
+            mn8css.portrait_h = PORTRAIT_MIN_H;
+        }
+    }
     {
         f32 room = (PANEL_TOP - PANEL_FLOOR) -
                    (PORTRAIT_TOP + TEXT_BLOCK_H) * mn8css.text_scale;
@@ -975,7 +995,7 @@ static void mn8Css_Relayout(void)
     if (add) {
         total += (n_panels > 0 ? ROW_GAP : 0.0F) + ADD_TILE_W;
     }
-    x = (ROW_LEFT + ROW_RIGHT) * 0.5F - total * 0.5F;
+    x = ROW_CENTER - total * 0.5F;
     mn8css.n_tiles = 0;
     for (k = 0; k < N_SLOTS; k++) {
         if (!(key & (1 << k))) {
@@ -1012,8 +1032,10 @@ static void mn8Css_Relayout(void)
             mn8Css_CreateText(t);
         }
     }
-    pc_log_line("[8css] layout: %d panel(s)%s, %.2f wide, %.2f tall",
-                n_panels, add ? " + Add" : "", w, mn8css.panel_h);
+    pc_log_line("[8css] layout: %d panel(s)%s, %.2f wide, %.2f tall, "
+                "frame x%.3f",
+                n_panels, add ? " + Add" : "", w, mn8css.panel_h,
+                mn8css.layout_scale);
 }
 
 /// Panel label for the slot's character. '/' and '&' are control characters
@@ -1102,8 +1124,11 @@ static void mn8Css_MoveHand(int port)
         }
     }
 
-    if (h->x < HAND_MIN_X) h->x = HAND_MIN_X;
-    if (h->x > HAND_MAX_X) h->x = HAND_MAX_X;
+    {
+        f32 max_x = HAND_MAX_X * pc_widescreen_frame_scale();
+        if (h->x < -max_x) h->x = -max_x;
+        if (h->x > max_x) h->x = max_x;
+    }
     if (h->y < HAND_MIN_Y) h->y = HAND_MIN_Y;
     if (h->y > HAND_MAX_Y) h->y = HAND_MAX_Y;
 }
