@@ -190,3 +190,17 @@ be updated to match.
     feasible since MEM1 sits at >= `0x20000000` (see `MEMORY.md`).
 - Remaining regardless: camera framing for 8; the other ~140 literal `< 6`
   player loops outside `gmvs.c`/`if/`; widescreen HUD spread for 7-8.
+
+### Custom 8-slot character select screen (queued 2026-09-17)
+A new CSS for 8-player VS with eight identical panels, each HMN, CPU or off,
+replacing the stopgap of four vanilla doors plus four compact CPU panels.
+Vanilla feel: everyone grabs characters at once with their own hand.
+- Touches: the CSS's whole contract with the game is `CSSData`
+  (`src/melee/mn/types.h:307`) wrapping a `VsModeData`; fill
+  `vs.start.players[0..7]` and set `pending_scene_change`. `GS_CSS` is shared
+  with Classic, Adventure, Event, Giant, Lightning and Camera Mode, so the
+  vanilla screen stays and the new one runs only for 8-player VS.
+- Open: raise ARAM to 32 MB first so eight different characters load; up to
+  four simultaneous hand cursors (input is capped at 4, see the 8-player VS
+  ticket); portraits and backdrop reused from the disc at runtime, panels
+  drawn in code.
