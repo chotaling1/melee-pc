@@ -235,9 +235,12 @@ Vanilla feel: everyone grabs characters at once with their own hand.
   hand (mouse or any stick). A on a panel selects it, A on a portrait assigns
   and advances, X cycles HMN/CPU/Off, L/R level, Start to stage select (full
   matches confirmed), B back to the menu.
-- Next: a hand per controller so up to four people pick at once, costumes
-  (X/Y like vanilla), teams; then polish (portraits in the panels, hold-B to
-  leave).
+- Status 2026-09-18: milestone 2 built (`92456d5`, not yet playtested): a hand
+  per controller, grab-a-panel for CPUs, X/Y costumes, Teams via the vanilla
+  sign, hold B to leave. Art ticket below done and confirmed by Chuck.
+- Next: playtest milestone 2 (two controllers at once, costumes in match, an
+  8-fighter Teams match); decide on 8 human controllers (input is 4 ports
+  end to end: aurora PAD_CHANMAX, HSD_Pad*Status[4], launcher port UI).
 
 
 ### Custom CSS: art, animation and sound (queued 2026-09-17)
@@ -259,7 +262,14 @@ animations, sounds.
   look is the vanilla portraits and door animations, just scaled down to fit.
 - Decided (Chuck, 2026-09-17): door width scales with how many fighters are
   in, so two players get big doors and eight get narrow ones.
-- Open: the door model holds all four doors in one tree, so free per-door
+- Status 2026-09-18: **done, confirmed by Chuck** (`eca9770`..`67abcfe`):
+  sounds, coins, Ready to Fight banner, real portraits (costume_joint texture
+  anim in the `menu` model, drawn as quads), only joined slots get panels plus
+  an Add tile, width by fighter count, panel motion, P5-P8 off at boot. Also
+  widescreen now applies to every scene (`a513c6f`), menu mouse un-widened
+  (`48df614`), hand drawn with its fingertip on the pointed spot (`b792ebd`).
+  Not checked in 16:9: main menu, stage select, results, other menus.
+- Open (superseded): the door model holds all four doors in one tree, so free per-door
   width and placement may mean positioning each door's joints individually
   rather than scaling two whole instances; width-only scaling would stretch
   the portraits, so decide between uniform scale and cropping.
