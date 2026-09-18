@@ -531,6 +531,10 @@ static void mn8Css_HandThink(HSD_GObj* gobj)
     if (trig & HSD_PAD_A) {
         int ckind = mnCharSel_PcIconAt(mn8css.hand_x, mn8css.hand_y);
 
+        pc_log_line("[8css] A at (%.1f, %.1f): panel=%d icon=%d active=P%d",
+                    mn8css.hand_x, mn8css.hand_y, mn8css.hover_panel, ckind,
+                    mn8css.active + 1);
+
         if (mn8css.hover_panel >= 0) {
             if (mn8css.hover_panel != mn8css.active) {
                 mn8css.active = mn8css.hover_panel;
@@ -678,6 +682,27 @@ static void mn8Css_BuildScene(void)
     GObj_SetupGXLink(gobj, mn8Css_Draw, 1, 0x80);
     for (i = 0; i < N_SLOTS; i++) {
         mn8Css_CreateText(i);
+    }
+    {
+        /* How-to line in the gap between the grid (bottom y -1) and the
+         * panels (top y PANEL_TOP). */
+        HSD_Text* hint = HSD_SisLib_803A6754(0, mn8css.text_ctx);
+        f32 w = 2.0F * -PANEL_LEFT;
+
+        hint->x4C = 1;
+        hint->default_fitting = 1;
+        hint->default_alignment = 1;
+        hint->font_size.x = TEXT_FONT_X * 0.8F;
+        hint->font_size.y = TEXT_FONT_Y * 0.8F;
+        hint->pos_x = PANEL_LEFT;
+        hint->pos_y = 1.2F;
+        hint->pos_z = 0.0F;
+        hint->box_size_x = w / hint->font_size.x;
+        hint->box_size_y = 60.0F;
+        HSD_SisLib_803A6B98(hint, hint->box_size_x * 0.5F, 0.0F, "%s",
+                            "A on a panel: select it   A on a character: "
+                            "give it to the yellow panel   X: HMN/CPU/Off   "
+                            "L/R: level   Start: go");
     }
 
     /* Hand, which also runs the screen's input. */
