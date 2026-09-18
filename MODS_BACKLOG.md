@@ -132,6 +132,19 @@ select screen.
 
 ## Unsorted
 
+### Explore a more modern project structure (queued 2026-09-17)
+Analyze the codebase for modern practices: interfaces, dependency injection,
+separation of concerns, MVVM/MVI/MVC, and better error handling, e.g. a match
+that hits a crash ends and returns to the CSS instead of killing the process.
+- Touches: ~376k lines of decompiled game code (`src/melee`, `src/sysdolphin`)
+  that mirrors the original binary and is synced from upstream; ~14k lines of
+  port layer (`src/pc`); ~3k lines of our mod modules (`gmsoccer.c`,
+  `gmarena.c`, `gm8player.c`, `mn8css.c`, `mnmouse.c`) plus `#ifdef MELEE_PC`
+  hooks in 15 game files.
+- Open: which layers are ours to restructure without breaking upstream syncs;
+  whether a crashed match can be recovered safely in C, or only logged and
+  exited cleanly.
+
 ### 8-player VS (queued 2026-09-17)
 VS mode with up to 8 players at once. The character select screen would need to
 be updated to match.
