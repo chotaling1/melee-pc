@@ -128,7 +128,10 @@ struct ifMagnify {
     int xC;
     int x10;
     ifMagnifyPlayer player[GM_MAX_PLAYERS];
-    HSD_ImageDesc image_descs[5];
+    /* One per player except slot 0, which points straight at the model's own
+     * image desc (ifmagnify.c:487). Indexed [slot - 1], so it has to track
+     * GM_MAX_PLAYERS or slots past vanilla write off the end of the struct. */
+    HSD_ImageDesc image_descs[GM_MAX_PLAYERS - 1];
     u8 pad[0xF0 - 0xEC];
 };
 
