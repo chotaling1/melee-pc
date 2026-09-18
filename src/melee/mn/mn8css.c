@@ -104,6 +104,12 @@
 #define PANEL_Z (0.0F)
 /* Pseudo-slot for the Add tile in hover/tile lookups. */
 #define TILE_ADD N_SLOTS
+
+/* Panel motion: each frame a panel closes this fraction of the gap to where
+ * the layout wants it (an ease-out, ~95% there in 11 frames). Panels joining
+ * rise from MOTION_DROP below their place; leaving ones sink that far. */
+#define MOTION_EASE (0.25F)
+#define MOTION_DROP (30.0F)
 /* Opaque tray behind the panels, covering the vanilla player row from just
  * under the grid to past the bottom of the screen. */
 #define TRAY_TOP (-1.1F)
@@ -251,6 +257,22 @@ static struct {
     f32 text_scale;
     f32 portrait_h; ///< full (uncropped) portrait height
     HSD_Text* add_text;
+    /* What is drawn, easing towards the layout (mn8Css_MotionThink). Indexed
+     * by slot, TILE_ADD for the Add tile. */
+    struct {
+        bool live;    ///< drawn
+        bool leaving; ///< sinking out; dropped once off screen
+        f32 x0;
+        f32 w;
+        f32 dy; ///< vertical offset, 0 in place, negative below
+        f32 tx0;
+        f32 tw;
+        /* Last drawn fill and portrait, kept for the way out. */
+        GXColor color;
+        HSD_ImageDesc* image;
+        HSD_Tlut* tlut;
+    } motion[N_SLOTS + 1];
+    f32 shown_h; ///< drawn panel height, easing towards panel_h
     int text_ctx;
     HSD_Text* text[N_SLOTS];
     Mn8Slot slot[N_SLOTS];
@@ -508,13 +530,17 @@ static int mn8Css_PanelAt(f32 x, f32 y)
 {
     int t;
 
-    if (y > PANEL_TOP || y < PANEL_TOP - mn8css.panel_h) {
-        return -1;
-    }
-    for (t = 0; t < mn8css.n_tiles; t++) {
-        f32 x0 = mn8css.tile[t].x0;
-        if (x >= x0 && x <= x0 + mn8css.tile[t].w) {
-            return mn8css.tile[t].slot;
+    /* Where panels are drawn, not where they are heading. */
+    for (t = 0; t <= N_SLOTS; t++) {
+        f32 top = PANEL_TOP + mn8css.motion[t].dy;
+        if (!mn8css.motion[t].live || mn8css.motion[t].leaving) {
+            continue;
+        }
+        if (y <= top && y >= top - mn8css.shown_h &&
+            x >= mn8css.motion[t].x0 &&
+            x <= mn8css.motion[t].x0 + mn8css.motion[t].w)
+        {
+            return t;
         }
     }
     return -1;
@@ -732,8 +758,8 @@ static void mn8Css_BeginTexQuads(void)
 static void mn8Css_DrawPortrait(int k)
 {
     const Mn8Portrait* pt = &mn8css.portrait[k];
-    HSD_ImageDesc* img = pt->image;
-    int t = mn8Css_TileOf(k);
+    HSD_ImageDesc* img;
+    HSD_Tlut* tlut_desc;
     GXTexObj tex;
     f32 box_w;
     f32 h = mn8css.portrait_h;
@@ -743,7 +769,19 @@ static void mn8Css_DrawPortrait(int k)
     f32 x0;
     f32 y0;
 
-    if (img == NULL || t < 0 || img->width == 0 || img->height == 0) {
+    if (!mn8css.motion[k].live) {
+        return;
+    }
+    if (mn8css.motion[k].leaving) {
+        img = mn8css.motion[k].image;
+        tlut_desc = mn8css.motion[k].tlut;
+    } else {
+        img = pt->image;
+        tlut_desc = pt->tlut;
+        mn8css.motion[k].image = img;
+        mn8css.motion[k].tlut = tlut_desc;
+    }
+    if (img == NULL || img->width == 0 || img->height == 0) {
         return;
     }
     switch (img->format) {
@@ -751,11 +789,11 @@ static void mn8Css_DrawPortrait(int k)
     case GX_TF_C8:
     case GX_TF_C14X2: {
         GXTlutObj tlut;
-        if (pt->tlut == NULL) {
+        if (tlut_desc == NULL) {
             return;
         }
-        GXInitTlutObj(&tlut, pt->tlut->lut, pt->tlut->fmt,
-                      pt->tlut->n_entries);
+        GXInitTlutObj(&tlut, tlut_desc->lut, tlut_desc->fmt,
+                      tlut_desc->n_entries);
         GXLoadTlut(&tlut, GX_TLUT0);
         GXInitTexObjCI(&tex, DP(void, img->image_ptr), img->width,
                        img->height, img->format, GX_CLAMP, GX_CLAMP,
@@ -771,7 +809,7 @@ static void mn8Css_DrawPortrait(int k)
     GXLoadTexObj(&tex, GX_TEXMAP0);
 
     /* Full height; crop the sides evenly if the panel is narrower. */
-    box_w = mn8css.tile[t].w - 2.0F * PORTRAIT_MARGIN_X;
+    box_w = mn8css.motion[k].w - 2.0F * PORTRAIT_MARGIN_X;
     w = h * (f32) img->width / (f32) img->height;
     if (w > box_w) {
         f32 keep = box_w / w;
@@ -779,8 +817,8 @@ static void mn8Css_DrawPortrait(int k)
         u1 = 0.5F + keep * 0.5F;
         w = box_w;
     }
-    x0 = mn8css.tile[t].x0 + (mn8css.tile[t].w - w) * 0.5F;
-    y0 = PANEL_TOP - PORTRAIT_TOP * mn8css.text_scale;
+    x0 = mn8css.motion[k].x0 + (mn8css.motion[k].w - w) * 0.5F;
+    y0 = PANEL_TOP + mn8css.motion[k].dy - PORTRAIT_TOP * mn8css.text_scale;
 
     GXBegin(GX_QUADS, GX_VTXFMT0, 4);
     GXPosition3f32(x0, y0, PANEL_Z);
@@ -803,7 +841,6 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     static const GXColor plus_color = { 0xE0, 0xE2, 0xEA, 0xFF };
     int k;
     int p;
-    int t;
 
     /* Pass 2 only. The labels draw in pass 2 as well (HSD_SisLib_803A84BC
      * skips every other pass) and their gobjs come after this one on the same
@@ -815,14 +852,24 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     mn8Css_BeginQuads();
     /* Tray over the whole vanilla player row, whichever model draws it. */
     mn8Css_Rect(-80.0F, TRAY_BOTTOM, 80.0F, TRAY_TOP, 0.0F, tray);
-    for (t = 0; t < mn8css.n_tiles; t++) {
-        f32 x0 = mn8css.tile[t].x0;
-        f32 x1 = x0 + mn8css.tile[t].w;
-        f32 y1 = PANEL_TOP - mn8css.panel_h;
+    for (k = 0; k <= N_SLOTS; k++) {
+        f32 x0 = mn8css.motion[k].x0;
+        f32 x1 = x0 + mn8css.motion[k].w;
+        f32 y0 = PANEL_TOP + mn8css.motion[k].dy;
+        f32 y1 = y0 - mn8css.shown_h;
         GXColor frame = frame_plain;
+        GXColor fill;
         f32 b = PANEL_BORDER;
 
-        k = mn8css.tile[t].slot;
+        if (!mn8css.motion[k].live) {
+            continue;
+        }
+        if (mn8css.motion[k].leaving) {
+            fill = mn8css.motion[k].color;
+        } else {
+            fill = k == TILE_ADD ? add_fill : mn8Css_PanelColor(k);
+            mn8css.motion[k].color = fill;
+        }
         /* Held by a hand: that hand's colour, thick. Else white on hover. */
         for (p = 0; p < N_PORTS; p++) {
             const Mn8Hand* h = &mn8css.hand[p];
@@ -839,13 +886,16 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
             }
         }
 
-        mn8Css_Rect(x0, y1, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
-        mn8Css_Rect(x0 + b, y1 + b, x1 - b, PANEL_TOP - b, PANEL_Z,
-                    k == TILE_ADD ? add_fill : mn8Css_PanelColor(k));
+        if (mn8css.motion[k].leaving) {
+            frame = frame_plain;
+            b = PANEL_BORDER;
+        }
+        mn8Css_Rect(x0, y1, x1, y0, PANEL_Z - 0.1F, frame);
+        mn8Css_Rect(x0 + b, y1 + b, x1 - b, y0 - b, PANEL_Z, fill);
         if (k == TILE_ADD) {
             /* A plus sign above the "Add" label. */
             f32 cx = (x0 + x1) * 0.5F;
-            f32 cy = PANEL_TOP - mn8css.panel_h * 0.5F + 1.2F;
+            f32 cy = y0 - mn8css.shown_h * 0.5F + 1.2F;
             f32 arm = 1.3F;
             f32 bar = 0.25F;
 
@@ -1012,6 +1062,26 @@ static void mn8Css_Relayout(void)
         mn8css.tile[t].slot = TILE_ADD;
         mn8css.tile[t].x0 = x;
         mn8css.tile[t].w = ADD_TILE_W;
+    }
+
+    /* Motion targets. Newcomers rise from below; panels with no tile any more
+     * sink out, drawn from what they last showed. */
+    for (k = 0; k <= N_SLOTS; k++) {
+        t = mn8Css_TileOf(k);
+        if (t >= 0) {
+            mn8css.motion[k].tx0 = mn8css.tile[t].x0;
+            mn8css.motion[k].tw = mn8css.tile[t].w;
+            if (!mn8css.motion[k].live) {
+                mn8css.motion[k].x0 = mn8css.tile[t].x0;
+                mn8css.motion[k].w = mn8css.tile[t].w;
+                mn8css.motion[k].dy = -MOTION_DROP;
+                mn8css.motion[k].image = NULL;
+            }
+            mn8css.motion[k].live = true;
+            mn8css.motion[k].leaving = false;
+        } else if (mn8css.motion[k].live) {
+            mn8css.motion[k].leaving = true;
+        }
     }
 
     /* Labels: rebuilt for the new boxes. */
@@ -1548,6 +1618,56 @@ static void mn8Css_BannerThink(void)
     HSD_JObjAnimAll(mn8css.banner);
 }
 
+/// Put a label box over where its panel is drawn this frame. The box keeps
+/// the layout's width; it is centred on the panel as that eases in.
+static void mn8Css_PlaceText(HSD_Text* text, int k)
+{
+    f32 box_w;
+
+    if (text == NULL) {
+        return;
+    }
+    box_w = text->box_size_x * text->font_size.x;
+    text->pos_x =
+        mn8css.motion[k].x0 + mn8css.motion[k].w * 0.5F - box_w * 0.5F;
+    text->pos_y = -(PANEL_TOP + mn8css.motion[k].dy);
+}
+
+static f32 mn8Css_Ease(f32 cur, f32 target)
+{
+    f32 d = target - cur;
+
+    if (d < 0.01F && d > -0.01F) {
+        return target;
+    }
+    return cur + d * MOTION_EASE;
+}
+
+static void mn8Css_MotionThink(void)
+{
+    int k;
+
+    mn8css.shown_h = mn8Css_Ease(mn8css.shown_h, mn8css.panel_h);
+    for (k = 0; k <= N_SLOTS; k++) {
+        if (!mn8css.motion[k].live) {
+            continue;
+        }
+        if (mn8css.motion[k].leaving) {
+            mn8css.motion[k].dy =
+                mn8Css_Ease(mn8css.motion[k].dy, -MOTION_DROP);
+            if (mn8css.motion[k].dy <= -MOTION_DROP + 0.5F) {
+                mn8css.motion[k].live = false;
+            }
+            continue;
+        }
+        mn8css.motion[k].x0 =
+            mn8Css_Ease(mn8css.motion[k].x0, mn8css.motion[k].tx0);
+        mn8css.motion[k].w = mn8Css_Ease(mn8css.motion[k].w, mn8css.motion[k].tw);
+        mn8css.motion[k].dy = mn8Css_Ease(mn8css.motion[k].dy, 0.0F);
+        mn8Css_PlaceText(k == TILE_ADD ? mn8css.add_text : mn8css.text[k], k);
+    }
+}
+
 static void mn8Css_InputThink(HSD_GObj* gobj)
 {
     int p;
@@ -1564,6 +1684,7 @@ static void mn8Css_InputThink(HSD_GObj* gobj)
         mn8Css_PoseHand(p);
     }
     mn8Css_Relayout();
+    mn8Css_MotionThink();
     mn8Css_CoinsThink();
     mn8Css_BannerThink();
     mn8Css_ResolvePortraits();
@@ -1717,7 +1838,14 @@ static void mn8Css_BuildScene(void)
     }
     mn8css.add_text = NULL;
     mn8css.layout_key = -1;
+    for (i = 0; i <= N_SLOTS; i++) {
+        mn8css.motion[i].live = false;
+        mn8css.motion[i].leaving = false;
+    }
     mn8Css_Relayout();
+    mn8css.shown_h = mn8css.panel_h;
+    /* The whole row rises in on entry, as the vanilla doors open. */
+    mn8Css_MotionThink();
     {
         /* How-to line in the gap between the grid (bottom y -1) and the
          * panels (top y PANEL_TOP). No '/' or '&': see mn8Css_PanelName. */
