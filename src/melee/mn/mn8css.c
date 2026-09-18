@@ -604,6 +604,31 @@ static void mn8Css_BackgroundThink(HSD_GObj* gobj)
 
 /* ---- scene -------------------------------------------------------------- */
 
+/* Anything in the grid model whose origin sits below this is part of the
+ * vanilla player row (door frames, name plates, stars), not the grid, whose
+ * lowest icons end at y -1 (ICONROWHT_BTM_BTM in mncharsel.c). */
+#define GRID_FLOOR_Y (-3.0F)
+
+/// Hide every subtree of @p jobj rooted below GRID_FLOOR_Y. Returns how many
+/// subtrees were hidden.
+static int mn8Css_HideBelowGrid(HSD_JObj* jobj)
+{
+    int hidden = 0;
+
+    for (; jobj != NULL; jobj = jobj->next) {
+        Vec3 pos;
+
+        lb_8000B1CC(jobj, NULL, &pos);
+        if (pos.y < GRID_FLOOR_Y) {
+            HSD_JObjSetFlagsAll(jobj, JOBJ_HIDDEN);
+            hidden++;
+        } else if (!(jobj->flags & JOBJ_INSTANCE)) {
+            hidden += mn8Css_HideBelowGrid(jobj->child);
+        }
+    }
+    return hidden;
+}
+
 static HSD_JObj* mn8Css_LoadModel(StaticModelDesc* desc)
 {
     HSD_JObj* jobj = HSD_JObjLoadJoint(DP(HSD_Joint, desc->joint));
@@ -668,6 +693,11 @@ static void mn8Css_BuildScene(void)
     HSD_ForeachAnim(menu, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
                     AOBJ_ARG_AOV, NULL);
     mnCharSel_PcSetupIcons(menu);
+    /* The grid model carries the vanilla player row too; clear it out so
+     * only the panels below are left there. Children only: the root spans
+     * the whole screen. */
+    pc_log_line("[8css] hid %d grid-model subtrees below the grid",
+                mn8Css_HideBelowGrid(menu->child));
     for (i = 0; i < (int) ARRAY_SIZE(mn8css_hidden_joints); i++) {
         HSD_JObj* jobj;
         lb_80011E24(menu, &jobj, mn8css_hidden_joints[i], -1);
