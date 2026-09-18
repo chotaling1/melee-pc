@@ -452,6 +452,20 @@ static void mn8Css_CreateText(int k)
     mn8css.shown[k].kind = 0xFF;
 }
 
+/// Panel label for the slot's character. '/' and '&' are control characters
+/// in the game's text encoding and swallow what follows, so the one name that
+/// contains either is spelled out.
+static const char* mn8Css_PanelName(const Mn8Slot* s)
+{
+    if (s->ckind == ChKind_None) {
+        return s->kind == SLOT_OFF ? "" : "Pick";
+    }
+    if (s->ckind == CKind_GameWatch) {
+        return "Game and Watch";
+    }
+    return gm8Player_CharName(s->ckind);
+}
+
 static void mn8Css_RefreshText(void)
 {
     char buf[24];
@@ -466,10 +480,7 @@ static void mn8Css_RefreshText(void)
         {
             continue;
         }
-        HSD_SisLib_803A70A0(mn8css.text[k], 1, "%s",
-                            s->ckind == ChKind_None
-                                ? (s->kind == SLOT_OFF ? "" : "Pick")
-                                : gm8Player_CharName(s->ckind));
+        HSD_SisLib_803A70A0(mn8css.text[k], 1, "%s", mn8Css_PanelName(s));
         HSD_SisLib_803A70A0(mn8css.text[k], 2, "%s",
                             mn8Css_KindLabel(s, buf, sizeof(buf)));
         *shown = *s;
@@ -732,8 +743,7 @@ static void mn8Css_BuildScene(void)
     }
     {
         /* How-to line in the gap between the grid (bottom y -1) and the
-         * panels (top y PANEL_TOP). No '/': in the game's text encoding it
-         * starts a control code and swallows the next character. */
+         * panels (top y PANEL_TOP). No '/' or '&': see mn8Css_PanelName. */
         HSD_Text* hint = HSD_SisLib_803A6754(0, mn8css.text_ctx);
         f32 w = 2.0F * -PANEL_LEFT;
 
