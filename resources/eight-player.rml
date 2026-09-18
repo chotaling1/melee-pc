@@ -1,0 +1,46 @@
+<rml>
+<head>
+<title>8-player CPUs</title>
+<style>
+body {
+    font-family: "Liberation Sans";
+    color: #ffffff;
+    position: absolute;
+    top: 1%;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    pointer-events: none;
+    z-index: 100;
+}
+.panel {
+    display: inline-block;
+    width: 118dp;
+    margin: 0 4dp;
+    padding: 4dp 6dp;
+    background-color: #3a3f4acc;
+    border-width: 2dp;
+    border-color: #00000000;
+    text-align: center;
+}
+.panel.focus { border-color: #ffd23a; background-color: #5a6070e6; }
+.panel.off .name { color: #9aa0ab; }
+.tag { font-size: 12dp; font-weight: bold; color: #c9ced8; }
+.name { font-size: 15dp; font-weight: bold; }
+.lvl { font-size: 12dp; color: #c9ced8; }
+#hint {
+    display: block;
+    margin-top: 3dp;
+    font-size: 11dp;
+    color: #e6e9ef;
+}
+</style>
+</head>
+<body>
+<div class="panel" id="p0"><div class="tag">P5 CPU</div><div class="name" id="n0">-</div><div class="lvl" id="l0">-</div></div>
+<div class="panel" id="p1"><div class="tag">P6 CPU</div><div class="name" id="n1">-</div><div class="lvl" id="l1">-</div></div>
+<div class="panel" id="p2"><div class="tag">P7 CPU</div><div class="name" id="n2">-</div><div class="lvl" id="l2">-</div></div>
+<div class="panel" id="p3"><div class="tag">P8 CPU</div><div class="name" id="n3">-</div><div class="lvl" id="l3">-</div></div>
+<div id="hint">D-pad Left/Right: pick CPU  |  Up/Down: character  |  L/R: level</div>
+</body>
+</rml>

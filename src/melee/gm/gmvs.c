@@ -2007,6 +2007,8 @@ void fn_8016E730(StartMeleeData* arg0)
     HSD_GObj* temp_r30;
     VsSceneController* r30;
 
+    /* PC: every mode's match comes through here; see gm8Player_SanitizeSlots. */
+    gm8Player_SanitizeSlots(arg0);
     db_Setup();
     gm_SetDbPauseInputHandlers(gm_AnyControllerPressedStart,
                                gm_AnyControllerPressedZ);

@@ -12,6 +12,8 @@
 #include "mnnamenew.h"
 #include "types.h"
 #include <melee/gm/gm_1601.h>
+#include <melee/gm/gm_1A3F.h>
+#include <melee/gm/gm8player.h>
 #include <melee/gm/gm_unsplit.h>
 #include <melee/gm/gmmain_lib.h>
 #include <melee/gm/types.h>
@@ -4188,6 +4190,101 @@ static const GXColor mnCharSel_804DC58C = { 160, 160, 0, 255 };
 static const GXColor mnCharSel_804DC590 = { 180, 80, 0, 255 };
 static const GXColor mnCharSel_804DC594 = { 220, 0, 0, 255 };
 
+#ifdef MELEE_PC
+/* PC (8-player VS): four extra CPU panels, P5-P8, edited with the D-pad from
+ * any controller. The vanilla CSS reads only A, B, Start and the analog stick
+ * (the hand moves via getStickDelta, stick only), so the D-pad and L/R are
+ * free here and the vanilla hand logic is left untouched. Panels are shown by
+ * the resources/eight-player.rml overlay.
+ *
+ *   D-pad Left/Right  focus P5..P8
+ *   D-pad Up/Down     character, in grid order, with Off before the first
+ *   L / R             CPU level down / up
+ */
+static u8 mnCharSel_8pToken; ///< user data, only there for the remove hook
+
+/// Grid position of @p ckind, or -1 for none/off.
+static int mnCharSel_8pIconIndex(int ckind)
+{
+    int i;
+
+    for (i = 0; i < 25; i++) {
+        if (icons[i].char_kind == ckind) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void mnCharSel_8pCycleChar(int dir)
+{
+    int k = gm8Player_PanelFocus();
+    /* -1 is Off, 0..24 walk the grid the same way the player sees it. */
+    int idx = mnCharSel_8pIconIndex(gm8Player_PanelCkind(k)) + dir;
+
+    if (idx > 24) {
+        idx = -1;
+    } else if (idx < -1) {
+        idx = 24;
+    }
+    gm8Player_PanelSetCkind(k, idx < 0 ? ChKind_None : icons[idx].char_kind);
+}
+
+static void mnCharSel_8pThink(HSD_GObj* gobj)
+{
+    int port;
+
+    for (port = 0; port < PAD_MAX_CONTROLLERS; port++) {
+        u32 trig = HSD_PadCopyStatus[port].trigger;
+
+        if (trig & HSD_PAD_DPADLEFT) {
+            gm8Player_PanelFocusMove(-1);
+            sfxMove();
+        }
+        if (trig & HSD_PAD_DPADRIGHT) {
+            gm8Player_PanelFocusMove(+1);
+            sfxMove();
+        }
+        if (trig & HSD_PAD_DPADUP) {
+            mnCharSel_8pCycleChar(+1);
+            sfxMove();
+        }
+        if (trig & HSD_PAD_DPADDOWN) {
+            mnCharSel_8pCycleChar(-1);
+            sfxMove();
+        }
+        if (trig & HSD_PAD_R) {
+            gm8Player_PanelLevelMove(gm8Player_PanelFocus(), +1);
+            sfxMove();
+        }
+        if (trig & HSD_PAD_L) {
+            gm8Player_PanelLevelMove(gm8Player_PanelFocus(), -1);
+            sfxMove();
+        }
+    }
+}
+
+/// Runs when the CSS scene frees its gobjs, so the overlay hides with it.
+static void mnCharSel_8pRemove(void* unused)
+{
+    gm8Player_SetCssActive(false);
+}
+
+static void mnCharSel_8pSetup(void)
+{
+    HSD_GObj* gobj;
+
+    /* Regular VS only: that is the one mode gm8Player_ConfigureMatch hooks. */
+    if (gm_GetCurrentGameMode() != GM_VS || !gm8Player_IsEnabled()) {
+        return;
+    }
+    gobj = GObj_Create(4, 5, 0x80);
+    HSD_GObj_SetupProc(gobj, mnCharSel_8pThink, 1);
+    GObj_InitUserData(gobj, 4, mnCharSel_8pRemove, &mnCharSel_8pToken);
+    gm8Player_SetCssActive(true);
+}
+#endif
+
 s32 mnCharSel_802640A0(void)
 {
     HSD_JObj* sp108;
@@ -4520,6 +4617,9 @@ s32 mnCharSel_802640A0(void)
         cursor->xC = (f32) ((15.0f * (f32) i) - 31.0f);
         cursor->x10 = -21.5f;
     }
+#ifdef MELEE_PC
+    mnCharSel_8pSetup();
+#endif
 
     for (i = 0, slot = 0; i < num_players; i++, slot++) {
         {

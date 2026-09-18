@@ -960,6 +960,8 @@ public:
     Rml::ElementDocument* soccer_banner = nullptr;
     std::string soccer_banner_shown;
     const char* arena_shown = nullptr;
+    Rml::ElementDocument* eight_player = nullptr;
+    std::string eight_player_shown;
     int soccer_shown = -1;
     SDL_Window* window = nullptr;
     bool open = false;
@@ -1522,6 +1524,7 @@ extern "C" void pc_menu_init(SDL_Window* window) {
     port_menu.counter = context->LoadDocument((resources / "fps.rml").string());
     port_menu.soccer_score = context->LoadDocument((resources / "soccer.rml").string());
     port_menu.arena_name = context->LoadDocument((resources / "arena-name.rml").string());
+    port_menu.eight_player = context->LoadDocument((resources / "eight-player.rml").string());
     port_menu.soccer_banner = context->LoadDocument((resources / "soccer-banner.rml").string());
     if (!port_menu.document) {
         SDL_Log("F1 menu: could not load port-menu.rml");
@@ -1544,6 +1547,10 @@ extern "C" void pc_menu_event(const SDL_Event* event) {
 extern "C" bool pc_soccer_is_active(void);
 extern "C" void pc_soccer_get_score(int* left, int* right);
 extern "C" const char* pc_arena_hovered_name(void);
+extern "C" bool pc_8p_css_active(void);
+extern "C" int pc_8p_focus(void);
+extern "C" const char* pc_8p_panel_name(int k);
+extern "C" int pc_8p_panel_level(int k);
 extern "C" const char* pc_soccer_banner(int* side);
 extern "C" void pc_menu_update(void) {
     if (port_menu.soccer_banner) {
@@ -1563,6 +1570,43 @@ extern "C" void pc_menu_update(void) {
         } else if (port_menu.soccer_banner->IsVisible()) {
             port_menu.soccer_banner->Hide();
             port_menu.soccer_banner_shown.clear();
+        }
+    }
+    if (port_menu.eight_player) {
+        Rml::ElementDocument* doc = port_menu.eight_player;
+        if (pc_8p_css_active()) {
+            // Rebuild only when something changed; the panels are edited on
+            // the game side and this runs every frame.
+            const int focus = pc_8p_focus();
+            std::string key = std::to_string(focus);
+            for (int k = 0; k < 4; k++) {
+                key += '|';
+                key += pc_8p_panel_name(k);
+                key += ':';
+                key += std::to_string(pc_8p_panel_level(k));
+            }
+            if (key != port_menu.eight_player_shown) {
+                for (int k = 0; k < 4; k++) {
+                    const std::string id = std::to_string(k);
+                    const int level = pc_8p_panel_level(k);
+                    // Names are plain text ("Mr. Game & Watch"); escape for RML.
+                    std::string name;
+                    for (const char* c = pc_8p_panel_name(k); *c; c++)
+                        name += (*c == '&') ? std::string("&amp;") : std::string(1, *c);
+                    doc->GetElementById("n" + id)->SetInnerRML(name);
+                    doc->GetElementById("l" + id)->SetInnerRML(
+                        level != 0 ? "Level " + std::to_string(level) : std::string("-"));
+                    Rml::Element* panel = doc->GetElementById("p" + id);
+                    panel->SetClass("focus", k == focus);
+                    panel->SetClass("off", level == 0);
+                }
+                port_menu.eight_player_shown = key;
+            }
+            if (!doc->IsVisible())
+                doc->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+        } else if (doc->IsVisible()) {
+            doc->Hide();
+            port_menu.eight_player_shown.clear();
         }
     }
     if (port_menu.arena_name) {

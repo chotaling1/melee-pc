@@ -6,11 +6,15 @@
 
 #include <melee/mn/forward.h>
 
-/// PC mod: pad a VS match out to 8 fighters with CPUs.
+/// PC mod: up to four extra CPU fighters in a VS match, set up from four CPU
+/// panels on the character select screen.
 ///
-/// Player slots 0-3 are controller ports 1-4 and the extra fighters take 4-7.
+/// Player slots 0-3 are controller ports 1-4 and panel k fills slot 4 + k.
 /// The slots have to be contiguous and stop at 8; see ::GM_MAX_PLAYERS.
-///
+
+/// Whether the 8-player toggle is on.
+bool gm8Player_IsEnabled(void);
+
 /// Called from #onEnterVs *before* #gmVsMelee_EnterVs, which copies every slot
 /// out of the VsModeData.
 void gm8Player_ConfigureMatch(StartMeleeData* start);
@@ -20,11 +24,30 @@ void gm8Player_ConfigureMatch(StartMeleeData* start);
 /// screen, which also builds fighters.
 void gm8Player_ClearExtraSlots(StartMeleeData* start);
 
+/// Reset the slots the retail game never had, unless this match is an
+/// 8-player one. Called at the top of the VS scene setup, which every mode's
+/// match passes through.
+void gm8Player_SanitizeSlots(StartMeleeData* start);
+
 /// Player count the HUD should lay out for. ::StartMeleeRules::x0_3 is only
 /// 3 bits wide and cannot represent 8, so HUD setup calls this instead.
 int gm8Player_HudPlayerCount(int vanilla_count);
 
-/// Number of fighters the last configured match was padded out to.
+/// Number of fighters the last configured match had.
 int gm8Player_ActiveCount(void);
+
+/// @name CPU panels, edited from the character select screen.
+/// @{
+int gm8Player_PanelCount(void);
+int gm8Player_PanelFocus(void);
+void gm8Player_PanelFocusMove(int dir);
+/// ::CharacterKind, or ChKind_None when the panel is off.
+int gm8Player_PanelCkind(int k);
+void gm8Player_PanelSetCkind(int k, int ckind);
+int gm8Player_PanelLevel(int k);
+void gm8Player_PanelLevelMove(int k, int dir);
+void gm8Player_SetCssActive(bool active);
+const char* gm8Player_CharName(int ckind);
+/// @}
 
 #endif
