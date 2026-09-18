@@ -620,8 +620,12 @@ static void mn8Css_BuildScene(void)
 
     /* Camera, text canvas, lights and fog: as mnCharSel_802640A0. */
     gobj = mn8css.camera = GObj_Create(2, 3, 0x80);
+    /* mn_8022BA1C (the parallax proc below) re-inits the camera from this
+     * global every frame. Left alone it still points into the previous
+     * scene's archive, which has been freed. */
+    MenMain_cam = DP(HSD_CObjDesc, data->cam);
     HSD_GObjObject_80390A70(gobj, HSD_GObj_CameraKind,
-                            HSD_CObjLoadDesc(DP(HSD_CObjDesc, data->cam)));
+                            HSD_CObjLoadDesc(MenMain_cam));
     GObj_SetupGXLinkMax(gobj, HSD_GObj_803910D8, 0);
     gobj->gxlink_prios = 0x1F;
     HSD_GObj_SetupProc(gobj, mn_8022BA1C, 5); /* menu C-stick parallax */
