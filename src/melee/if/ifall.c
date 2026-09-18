@@ -74,6 +74,33 @@ Vec3* ifAll_GetPlayerHUDPosition(int idx)
     return &ifAll_804A0FD8.x18[idx];
 }
 
+#ifdef MELEE_PC
+/* PC: per-player HUD scale. 1 for every vanilla layout; below 1 only when
+ * ifAll_802F343C packs seven or eight players into one row. */
+static f32 ifAll_hud_scale = 1.0F;
+
+f32 ifAll_GetPlayerHUDScale(void)
+{
+    return ifAll_hud_scale;
+}
+
+/* Scale a player's HUD root jobj. The damage display and the stock icons are
+ * separate roots placed at the same HUD position, so both call this; scaling
+ * only one would leave full-size stocks overlapping shrunken percents. The
+ * roots have no transform animation (their SetTranslate sticks), so neither
+ * does this scale. */
+void ifAll_ApplyPlayerHUDScale(HSD_JObj* jobj)
+{
+    Vec3 scale;
+
+    if (jobj == NULL || ifAll_hud_scale == 1.0F) {
+        return;
+    }
+    scale.x = scale.y = scale.z = ifAll_hud_scale;
+    HSD_JObjSetScale(jobj, &scale);
+}
+#endif
+
 static inline void ifAll_802F343C_inline(int i)
 {
     ifAll_804A0FD8.x18[i].x *= 0.65F;
@@ -86,6 +113,9 @@ void ifAll_802F343C(int arg0)
     HSD_JObj* spC;
 
     jobj = ifAll_804A0FD8.x8;
+#ifdef MELEE_PC
+    ifAll_hud_scale = 1.0F;
+#endif
     switch (arg0) {
     case 1:
         lb_80011E24(jobj, &spC, 9, -1);
@@ -126,29 +156,32 @@ void ifAll_802F343C(int arg0)
         }
         break;
 #ifdef MELEE_PC
-    /* PC (8-player VS): the HUD asset only carries bones for up to six
-     * players, so a seventh and eighth position have to be derived. Players
-     * 1-4 keep the vanilla four-player row and the rest stack directly above
-     * them. The row gap reuses the asset's own horizontal spacing rather than
-     * a magic screen offset, so it tracks whatever the HUD model provides. */
+    /* PC (8-player VS): one row, extending the vanilla 5-6 player layout
+     * above. That layout takes its outermost positions from bones 6 and 7 and
+     * squeezes every X by 0.65 toward screen centre. Seven or eight players
+     * reuse the same two outer positions and spread their centres evenly
+     * between them, then shrink each HUD so the gap between neighbours stays
+     * what it is with six: six players span the width in 5 gaps, eight in 7,
+     * so the scale is 5/7. */
     case 7:
     case 8: {
-        f32 row_gap;
+        Vec3 left;
+        Vec3 right;
+        f32 step;
 
-        for (i = 0; i < 4; i++) {
-            lb_80011E24(jobj, &spC, i + 2, -1);
-            lb_8000B1CC(spC, NULL, &ifAll_804A0FD8.x18[i]);
-        }
+        lb_80011E24(jobj, &spC, 6, -1);
+        lb_8000B1CC(spC, NULL, &left);
+        lb_80011E24(jobj, &spC, 7, -1);
+        lb_8000B1CC(spC, NULL, &right);
+        left.x *= 0.65F;
+        right.x *= 0.65F;
 
-        row_gap = ifAll_804A0FD8.x18[1].x - ifAll_804A0FD8.x18[0].x;
-        if (row_gap < 0.0F) {
-            row_gap = -row_gap;
+        step = (right.x - left.x) / (f32) (arg0 - 1);
+        for (i = 0; i < arg0; i++) {
+            ifAll_804A0FD8.x18[i] = left;
+            ifAll_804A0FD8.x18[i].x = left.x + step * (f32) i;
         }
-
-        for (i = 4; i < arg0; i++) {
-            ifAll_804A0FD8.x18[i] = ifAll_804A0FD8.x18[i - 4];
-            ifAll_804A0FD8.x18[i].y += row_gap;
-        }
+        ifAll_hud_scale = 5.0F / (f32) (arg0 - 1);
         break;
     }
 #endif

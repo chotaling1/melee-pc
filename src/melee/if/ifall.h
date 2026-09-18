@@ -20,4 +20,11 @@
 /* 2F390C */ void ifAll_802F390C(void);
 /* 2F3A64 */ void ifAll_802F3A64(void);
 
+#ifdef MELEE_PC
+/// PC: scale to apply to each player's HUD root jobj (1 outside 8-player).
+f32 ifAll_GetPlayerHUDScale(void);
+/// PC: apply ifAll_GetPlayerHUDScale() to a player HUD root jobj.
+void ifAll_ApplyPlayerHUDScale(HSD_JObj* jobj);
+#endif
+
 #endif

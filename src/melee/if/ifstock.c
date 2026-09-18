@@ -591,6 +591,9 @@ void ifStock_802F98E8(u8 player, u8 b)
                 HSD_JObjReqAnimAll(jobj, 0.0f);
                 HSD_GObj_SetupProc(gobj, fn_802F9410, 17);
                 HSD_JObjSetTranslate(jobj, ifAll_GetPlayerHUDPosition(player));
+#ifdef MELEE_PC
+                ifAll_ApplyPlayerHUDScale(jobj);
+#endif
                 lb_80011E24(jobj, ifStock_804A1378.player[player].x4, 0, 1, 2,
                             3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
                             -1);

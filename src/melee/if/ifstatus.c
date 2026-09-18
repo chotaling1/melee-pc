@@ -699,6 +699,9 @@ HSD_GObj* ifStatus_802F5EC0(IfDamageState* state, s32 player_idx)
     HSD_JObjAnimAll(jobj);
     vec = ifAll_GetPlayerHUDPosition((u8) player_idx);
     HSD_JObjSetTranslate(jobj, vec);
+#ifdef MELEE_PC
+    ifAll_ApplyPlayerHUDScale(jobj);
+#endif
     for (i = 0; i < 4; i++) {
         state->jobjs[i] = ifStatus_GetDamageJObj(jobj, i);
         state->translation_x[i] = HSD_JObjGetTranslationX(state->jobjs[i]);
