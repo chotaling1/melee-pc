@@ -31,12 +31,13 @@ typedef struct Gm8Panel {
     u8 team;  ///< team in Teams mode: 0 red, 1 blue, 2 green
 } Gm8Panel;
 
-/* Persist across visits to the CSS, like the vanilla doors do. */
+/* Persist across visits to the CSS, like the vanilla doors do. All off at
+ * boot: P5-P8 only appear once someone adds them. */
 static Gm8Panel gm8p_panels[GM8P_EXTRA_COUNT] = {
-    { CKind_Mario, 5, GM8P_COLOR_AUTO, 0 },
-    { CKind_Donkey, 5, GM8P_COLOR_AUTO, 1 },
-    { CKind_Link, 5, GM8P_COLOR_AUTO, 0 },
-    { CKind_Kirby, 5, GM8P_COLOR_AUTO, 1 },
+    { ChKind_None, 5, GM8P_COLOR_AUTO, 0 },
+    { ChKind_None, 5, GM8P_COLOR_AUTO, 1 },
+    { ChKind_None, 5, GM8P_COLOR_AUTO, 0 },
+    { ChKind_None, 5, GM8P_COLOR_AUTO, 1 },
 };
 static int gm8p_focus;
 static bool gm8p_css_active;
