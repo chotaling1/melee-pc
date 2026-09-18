@@ -83,7 +83,11 @@
 #define PANEL_PITCH (7.95F)
 #define PANEL_WIDTH (7.35F)
 #define PANEL_BORDER (0.3F)
-#define PANEL_Z (-0.5F)
+#define PANEL_Z (0.0F)
+/* Opaque tray behind the panels, covering the vanilla player row from just
+ * under the grid to past the bottom of the screen. */
+#define TRAY_TOP (-1.1F)
+#define TRAY_BOTTOM (-32.0F)
 
 /* Text inside a panel. font_size is world units per text pixel; box sizes and
  * line offsets below are in text pixels. */
@@ -156,7 +160,7 @@ static const char* mn8Css_KindLabel(const Mn8Slot* s, char* buf, int len)
     case SLOT_HMN:
         return "HMN";
     case SLOT_CPU:
-        snprintf(buf, len, "CPU  Lv %d", s->level);
+        snprintf(buf, len, "CPU %d", s->level);
         return buf;
     default:
         return "Off";
@@ -347,7 +351,10 @@ static void mn8Css_BeginQuads(void)
     GXSetAlphaUpdate(GX_DISABLE);
     GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_NOOP);
     GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
-    GXSetZMode(GX_ENABLE, GX_LEQUAL, GX_ENABLE);
+    /* Paint over the vanilla player row whatever depth it sits at, and write
+     * no depth, so the labels drawn next are unaffected. Order does the
+     * layering instead: see mn8Css_Draw. */
+    GXSetZMode(GX_DISABLE, GX_ALWAYS, GX_DISABLE);
     GXSetZCompLoc(GX_ENABLE);
     GXSetNumTexGens(0);
     GXSetNumTevStages(1);
@@ -386,14 +393,19 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     static const GXColor frame_plain = { 0x0C, 0x0C, 0x10, 0xFF };
     static const GXColor frame_hover = { 0xE0, 0xE2, 0xEA, 0xFF };
     static const GXColor frame_active = { 0xFF, 0xD6, 0x2E, 0xFF };
+    static const GXColor tray = { 0x12, 0x16, 0x24, 0xFF };
     int k;
 
-    /* Opaque pass only. Text shares this GX link and is drawn after these
-     * quads; redrawing them in a later pass would paint over it. */
-    if (pass != 0) {
+    /* Pass 2 only. The labels draw in pass 2 as well (HSD_SisLib_803A84BC
+     * skips every other pass) and their gobjs come after this one on the same
+     * link, so they land on top; everything the backdrop and grid drew in
+     * passes 0 and 2 before this is covered. */
+    if (pass != 2) {
         return;
     }
     mn8Css_BeginQuads();
+    /* Tray over the whole vanilla player row, whichever model draws it. */
+    mn8Css_Rect(-45.0F, TRAY_BOTTOM, 45.0F, TRAY_TOP, 0.0F, tray);
     for (k = 0; k < N_SLOTS; k++) {
         f32 x0 = mn8Css_PanelLeft(k);
         f32 x1 = x0 + PANEL_WIDTH;
@@ -420,6 +432,7 @@ static void mn8Css_CreateText(int k)
     text->x4C = 1;
     text->default_fitting = 1;
     text->default_alignment = 1;
+    text->default_kerning = 1;
     text->font_size.x = TEXT_FONT_X;
     text->font_size.y = TEXT_FONT_Y;
     /* The text canvas runs y downward: world y maps to -pos_y, the same flip
@@ -722,10 +735,11 @@ static void mn8Css_BuildScene(void)
         hint->x4C = 1;
         hint->default_fitting = 1;
         hint->default_alignment = 1;
+        hint->default_kerning = 1;
         hint->font_size.x = TEXT_FONT_X * 0.8F;
         hint->font_size.y = TEXT_FONT_Y * 0.8F;
         hint->pos_x = PANEL_LEFT;
-        hint->pos_y = 1.2F;
+        hint->pos_y = 1.6F;
         hint->pos_z = 0.0F;
         hint->box_size_x = w / hint->font_size.x;
         hint->box_size_y = 60.0F;
