@@ -173,12 +173,20 @@ be updated to match.
   characters will not load. Cloning selected characters avoids it; raising the
   cap means changing how the port distinguishes ARAM from MEM1 pointers
   (`PC_IS_ARAM_ADDR`, `src/pc/disc.h:84`).
-- Next, in order:
-  1. Remove the per-slot debug logging in `gmvs.c` `fn_8016DCC0`.
-  2. HUD for 8 (`src/melee/if/ifall.c:132`, `:220`) — players 5-8 have no
-     damage display.
-  3. Camera framing for 8 subjects.
-  4. The other ~144 literal `< 6` player loops outside `gmvs.c`.
-  5. CSS for 8 (`mncharsel.c:3447`, `:5470`) and input past `PAD_CHANMAX 4`
-     in vendored aurora — the largest item, and the one that makes the extras
-     human-playable rather than CPUs.
+- Status 2026-09-17: debug logging removed; **HUD for 8 in a single row,
+  confirmed by Chuck** (`eb3df80`); extras now use the real VS AI and the
+  match's CPU level (`c68a308`) — they had been Training Mode dummies
+  (`cpu_kind = 0`).
+- Decision needed from Chuck before the CSS: are players 5-8 human or CPU?
+  - CPU: no input work. The CSS needs a way to pick 4 extra CPUs (character
+    and level). Small by comparison.
+  - Human: input widened at three layers (vendored aurora `PAD_CHANMAX`, SDK
+    `PAD_MAX_CONTROLLERS`, `HSD_PadMasterStatus[4]`), which conflicts with
+    every upstream merge, plus 8 physical controllers.
+  - Either way the vanilla CSS has no art for panels 5-8 (the four doors are
+    joints in the CSS model), so extra panels get drawn from code, reusing
+    portraits from the disc at runtime.
+  - Picking 8 *different* characters also needs ARAM raised past 16 MB; looks
+    feasible since MEM1 sits at >= `0x20000000` (see `MEMORY.md`).
+- Remaining regardless: camera framing for 8; the other ~140 literal `< 6`
+  player loops outside `gmvs.c`/`if/`; widescreen HUD spread for 7-8.
