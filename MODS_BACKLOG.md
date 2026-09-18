@@ -3,6 +3,40 @@
 Work queued for the `mods` branch. Newest decisions first within each item.
 Sections are in priority order.
 
+## Next up (priority, reported by Chuck 2026-09-18)
+
+### 8-player: results screen crashes (queued 2026-09-18)
+Finishing a match with 8 fighters and going to the results screen crashes
+the game. Never exercised before: every earlier 8-player test stopped at
+the match.
+- Touches: the results scene reads per-player match data and draws a column
+  per player; its arrays and layouts were sized for 4 (like the HUD, which
+  needed `gm8Player_HudPlayerCount`). Start from the crash address in
+  `melee-pc.log` (symbolize with `x86_64-w64-mingw32-nm -n`, ImageBase
+  0x10000000).
+- Open: show all 8 on the results screen or only the four ports; the
+  results screen is also unchecked in 16:9.
+
+### 8-player CSS: periodic frame skips with 8 on screen (queued 2026-09-18)
+With 8 panels up, the screen drops frames every so often.
+- Touches: per-frame cost in `mn8css.c` scales with slots: portrait
+  resolve (only on change), eight coins with pairwise push-apart and
+  HSD_Randf, eight texture uploads (GXInitTexObj/GXLoadTlut per portrait per
+  frame), and `lbDvd_80018254` streaming the port players' characters.
+  Measure first (frame time log) before guessing; a periodic hitch smells
+  like preload/streaming or texture cache churn rather than steady cost.
+
+### 8-player CSS: carry the coin like vanilla (queued 2026-09-18)
+Vanilla: A on your coin picks it up, the hand carries it, A drops it on a
+character. Ours: pointing at a character and pressing A just puts the coin
+there, so the pick-up/carry/drop feel is lost.
+- Touches: `mn8Css_Pick` / hand state in `mn8css.c`; vanilla's coin state
+  machine is `fn_80262648` (coin follows the hand at +2.7, -2.0 while held)
+  and the grab/drop paths in `mnCharSel_CursorThink` (sfx 0xB7 grab, 0xB8
+  drop). The hand model has a "holding" pose frame (1) on joint 2.
+- Open: grabbing a CPU's coin vs. grabbing its panel (today's grab), and
+  whether a placed coin still counts as picked when carried away.
+
 ## Dev tools
 
 ### Mouse control for menus (queued 2026-09-17; phases 0-1 done and confirmed 2026-09-17, OS cursor hidden in game; phase 2 done and confirmed 2026-09-17)
