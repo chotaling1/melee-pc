@@ -1,4 +1,10 @@
 #include "lbmemory.h"
+#ifdef TARGET_PC
+#include <pc/pc.h>
+/* The ARAM size aurora allocates and the value range the port treats as ARAM
+ * are defined in two headers; they must not drift apart. */
+STATIC_ASSERT(PC_ARAM_SIZE == PC_ARAM_LIMIT);
+#endif
 
 #include <Runtime/platform.h>
 
@@ -330,8 +336,16 @@ void lbMemory_8001564C(void)
 
     _p(a_arenaLo) = (void*) (uintptr_t) ARAlloc(0x20);
     ARFree(&freed_size);
+#ifdef TARGET_PC
+    /* The retail game caps ARAM at 16 MB; the port raises it for 8-player VS
+     * (see PC_ARAM_LIMIT in src/pc/disc.h). */
+    _p(a_arenaHi) = (void*) (uintptr_t) ((ARGetSize() > PC_ARAM_LIMIT)
+                                            ? PC_ARAM_LIMIT
+                                            : ARGetSize());
+#else
     _p(a_arenaHi) =
         (void*) (uintptr_t) ((ARGetSize() > 0x01000000U) ? 0x01000000U : ARGetSize());
+#endif
 
     _p(free_mem) = (Handle*) &_p(x8_mem)[0];
     for (i = 0; i < (int) ARRAY_SIZE(_p(x8_mem)) - 1; i++) {

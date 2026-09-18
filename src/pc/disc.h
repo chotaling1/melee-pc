@@ -37,6 +37,14 @@
 #ifndef PC_DISC_H
 #define PC_DISC_H
 
+/* ARAM addresses are small integers [0, PC_ARAM_LIMIT) and MEM1 pointers are
+ * real host addresses, so the port tells them apart by value. The limit must
+ * equal PC_ARAM_SIZE (src/pc/pc.h), and MEM1 must sit above it; main.c checks
+ * the second at startup. Raised from 16 MB for 8-player VS, where eight
+ * different characters' data does not fit the retail budget. aurora places
+ * MEM1 at 0x20000000 or higher (OSMemory.cpp), well clear of this. */
+#define PC_ARAM_LIMIT 0x02000000u
+
 #include <stdint.h>
 
 #ifdef TARGET_PC
@@ -81,7 +89,7 @@ static inline void* pc_resolve_dp(uint32_t slot) {
 
 #define DISC_ASSERT_SIZE(T, size) static_assert(sizeof(T) == (size), #T " disc size")
 
-#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < 0x01000000u)
+#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < PC_ARAM_LIMIT)
 
 struct DiscF32 {
     BE<float> v;
@@ -148,7 +156,7 @@ struct DiscMtx {
 /* The game tells ARAM offsets from main-RAM pointers with `addr < 0x80000000`.
  * On PC, MEM1 is mapped at 0x80000000 and the executable is linked at
  * 0x10000000, so anything below the 16MB ARAM size is an ARAM offset. */
-#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < 0x01000000u)
+#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < PC_ARAM_LIMIT)
 
 typedef struct DISC_STRUCT {
     float v;

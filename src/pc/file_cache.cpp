@@ -234,7 +234,7 @@ bool preload_single_file(const char* name, int entryNum) {
 }
 
 #ifndef PC_IS_ARAM_ADDR
-#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < 0x01000000u)
+#define PC_IS_ARAM_ADDR(a) ((uintptr_t)(a) < 0x02000000u)
 #endif
 
 uint8_t* resolve_host_dst(void* dst, size_t size) {

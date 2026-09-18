@@ -12,7 +12,8 @@ extern "C" {
 /* Game-visible memory. Runtime structs carry 64-bit pointers, so give the
  * game's heaps more room than the GameCube's 24MB. */
 #define PC_MEM1_SIZE (96u * 1024 * 1024)
-#define PC_ARAM_SIZE (16u * 1024 * 1024)
+/* Must match PC_ARAM_LIMIT in src/pc/disc.h. 16 MB retail. */
+#define PC_ARAM_SIZE (32u * 1024 * 1024)
 
 void pc_platform_init(void);
 

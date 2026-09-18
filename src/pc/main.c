@@ -338,6 +338,18 @@ MELEE_EXPORT int main(int argc, char* argv[]) {
      * drivers, and fullscreen swapchains fragment low virtual memory. */
     OSInit();
 
+    /* ARAM and MEM1 pointers are told apart purely by value: anything below
+     * PC_ARAM_SIZE is ARAM (PC_IS_ARAM_ADDR, src/pc/disc.h). If MEM1 ever
+     * landed that low, loads would be silently routed to the wrong memory, so
+     * refuse to start instead. aurora's fixed placements are all >= 512 MB;
+     * only its VirtualAlloc2 fallback could land lower. */
+    if ((uintptr_t) OSPhysicalToCached(0) < PC_ARAM_SIZE) {
+        pc_log_line("[FATAL] MEM1 at %p overlaps the ARAM address range "
+                    "(below 0x%X); cannot tell them apart",
+                    OSPhysicalToCached(0), (unsigned) PC_ARAM_SIZE);
+        return 1;
+    }
+
     const char* disc = NULL;
     bool card = true;
     for (int i = 1; i < argc; i++) {
