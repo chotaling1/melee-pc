@@ -1350,11 +1350,10 @@ static void mn8Css_ClickPanel(int port, int k)
 }
 
 /// A on the Add tile: join, if this hand's own port is not in yet; else a
-/// CPU in the first free slot (P5-P8 first, then ports with nobody holding
-/// a controller), which the hand grabs so its next pick lands there.
+/// CPU in the lowest free slot, skipping ports that have a controller in
+/// (their player's seat), which the hand grabs so its next pick lands there.
 static void mn8Css_ClickAdd(int port)
 {
-    static const u8 order[N_SLOTS] = { 4, 5, 6, 7, 0, 1, 2, 3 };
     Mn8Hand* h = &mn8css.hand[port];
     int i;
 
@@ -1365,7 +1364,7 @@ static void mn8Css_ClickAdd(int port)
         return;
     }
     for (i = 0; i < N_SLOTS; i++) {
-        int k = order[i];
+        int k = i;
         if (mn8css.slot[k].kind != SLOT_OFF) {
             continue;
         }
