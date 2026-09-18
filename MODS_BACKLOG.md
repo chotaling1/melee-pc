@@ -215,3 +215,14 @@ Vanilla feel: everyone grabs characters at once with their own hand.
   four simultaneous hand cursors (input is capped at 4, see the 8-player VS
   ticket); portraits and backdrop reused from the disc at runtime, panels
   drawn in code.
+- Status 2026-09-17: **milestone 1 done, confirmed by Chuck** (`7773cc9`..`fc54415`):
+  `src/melee/mn/mn8css.c` takes over GS_CSS in 8-player VS only. Vanilla
+  backdrop, grid and hand loaded from the disc; an opaque tray covers the old
+  player row; eight code-drawn panels labelled with the game's own text; one
+  hand (mouse or any stick). A on a panel selects it, A on a portrait assigns
+  and advances, X cycles HMN/CPU/Off, L/R level, Start to stage select (full
+  matches confirmed), B back to the menu.
+- Next: a hand per controller so up to four people pick at once, costumes
+  (X/Y like vanilla), teams; then polish (portraits in the panels, hold-B to
+  leave).
+
