@@ -226,3 +226,18 @@ Vanilla feel: everyone grabs characters at once with their own hand.
   (X/Y like vanilla), teams; then polish (portraits in the panels, hold-B to
   leave).
 
+
+### Custom CSS: art, animation and sound (queued 2026-09-17)
+Make the 8-slot character select screen look and feel like a real Melee menu
+instead of a static grid with plain text: character images in the panels,
+animations, sounds.
+- Touches: the vanilla CSS assets are all loadable from the disc at runtime.
+  Door portraits are one texture-animation frame per character on a door-model
+  joint (`animateJoint(..., costume_joint, TOBJ_MASK, frame)` in
+  `mnCharSel_8025D5AC`); `HSD_JObjLoadJoint` can instance the `door` model
+  more than once. Also in `MnSelectChrModels`: `token` (coins), `press_start`
+  (Ready to Fight banner). Sounds are the existing `lbAudioAx_800237A8` /
+  `80023870` / `80024030` calls in `mncharsel.c`.
+- Open: reuse vanilla art (two door-model instances scaled to fit eight) or
+  original art (can't ship Nintendo's; new models need an HSDRaw pipeline);
+  how much of vanilla's door open/close animation carries over at half size.
