@@ -3637,7 +3637,10 @@ void gm_80167BC8(VsModeData* vs_data)
     }
 
     i = 0;
-    for (i = 0; i < 6; i++) {
+    /* PC: all player slots, so 8-player VS extras get the rules' stock count
+     * and handicap too. gmMainLib_8015CE44 returns NULL past the four ports,
+     * which the handicap case below already falls back on. */
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         vs_data->start.players[i].stocks = (s8) rules->stock_count;
         switch (rules->handicap) {
         case 0:
