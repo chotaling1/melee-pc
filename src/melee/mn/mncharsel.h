@@ -29,4 +29,9 @@
 /* 2669F4 */ void mnCharSel_Scene_OnFrame(void);
 /* 266D70 */ void mnCharSel_Scene_OnExit(void*);
 
+#ifdef MELEE_PC
+void mnCharSel_PcSetupIcons(HSD_JObj* menu);
+int mnCharSel_PcIconAt(f32 x, f32 y);
+#endif
+
 #endif

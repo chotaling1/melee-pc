@@ -162,6 +162,13 @@ void gm8Player_PanelLevelMove(int k, int dir)
     gm8p_panels[k].level = (u8) level;
 }
 
+void gm8Player_PanelSetLevel(int k, int level)
+{
+    gm8p_panels[k].level = (u8) (level < GM8P_LEVEL_MIN   ? GM8P_LEVEL_MIN
+                                 : level > GM8P_LEVEL_MAX ? GM8P_LEVEL_MAX
+                                                          : level);
+}
+
 void gm8Player_SetCssActive(bool active)
 {
     gm8p_css_active = active;

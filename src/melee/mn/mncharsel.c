@@ -1,4 +1,6 @@
 #include "mncharsel.h"
+#include "mncharsel_data.h"
+#include "mn8css.h"
 
 #include <melee/ft/forward.h>
 #include <sysdolphin/baselib/forward.h>
@@ -51,26 +53,7 @@ static u8 mnCharSel_804D50D0[8] = { 2, 0, 1, 0, 5, 3, 4, 0 };
 static u8 mnCharSel_804D50D8[8] = { 2, 0, 8, 1, 7, 7, 7, 7 };
 static u8 mnCharSel_804D50E0[3] = { 0, 1, 3 };
 
-typedef struct DISC_STRUCT MnSelectChrModels {
-    /* 0x0 */ StaticModelDesc background;
-    /* 0x10 */ StaticModelDesc hand;
-    /* 0x20 */ StaticModelDesc token;
-    /* 0x30 */ StaticModelDesc menu;
-    /* 0x40 */ StaticModelDesc press_start;
-    /* 0x50 */ StaticModelDesc debug_camera;
-    /* 0x60 */ StaticModelDesc regend_menu;
-    /* 0x70 */ StaticModelDesc regend_options;
-    /* 0x80 */ StaticModelDesc door;
-} MnSelectChrModels;
-
-typedef struct DISC_STRUCT MnSelectChrDataTable {
-    /* 0x00 */ DISC_PTR(HSD_CObjDesc) cam;
-    /* 0x04 */ DISC_PTR(HSD_LightDesc) light0;
-    /* 0x08 */ DISC_PTR(HSD_LightDesc) light1;
-    /* 0x0C */ DISC_PTR(HSD_FogDesc) fog;
-    /* 0x10 */ MnSelectChrModels models;
-} MnSelectChrDataTable;
-DISC_ASSERT_SIZE(MnSelectChrDataTable, 0xA0);
+/* MnSelectChrModels / MnSelectChrDataTable: see mncharsel_data.h. */
 
 static CSSData* mnCharSel_804D6CB0;
 static MnSelectChrDataTable* css_data_table;
@@ -4270,6 +4253,87 @@ static void mnCharSel_8pRemove(void* unused)
     gm8Player_SetCssActive(false);
 }
 
+/* Used by the 8-slot CSS (mn8css.c), which reuses this screen's grid model
+ * and icon table but none of its door or hand logic. */
+
+/// Lay out and reveal the grid icons on @p menu (a fresh instance of the CSS
+/// `menu` model) exactly as the VS branch of mnCharSel_802640A0 does: Luigi's
+/// icon swaps rows depending on whether he is unlocked, secret characters are
+/// hidden or revealed, and other locked icons are greyed out.
+void mnCharSel_PcSetupIcons(HSD_JObj* menu)
+{
+    HSD_JObj* jobj;
+    int row_a;
+    int row_b;
+    int icon;
+
+    if (gm_IsCKindUnlocked(CKind_Luigi) == 0) {
+        row_a = 2;
+        row_b = 0x13;
+    } else {
+        row_a = 0x13;
+        row_b = 2;
+    }
+    lb_80011E24(menu, &jobj, icons[row_a].joint_id_vs, -1);
+    HSD_JObjSetTranslateY(jobj, ICONROWY_BTM);
+    icons[row_a].bound_u = ICONROWHT_BTM_TOP;
+    icons[row_a].bound_d = ICONROWHT_BTM_BTM;
+    lb_80011E24(menu, &jobj, icons[row_b].joint_id_vs, -1);
+    HSD_JObjSetTranslateY(jobj, ICONROWY_TOP);
+    icons[row_b].bound_u = ICONROWHT_TOP_TOP;
+    icons[row_b].bound_d = ICONROWHT_MID_TOP;
+
+    for (icon = 0; icon < 0x19; icon++) {
+        icons[icon].state = gm_IsCKindUnlocked(icons[icon].char_kind);
+        icons[icon].anim_timer = 0;
+        lb_80011E24(menu, &jobj, icons[icon].joint_id_vs, -1);
+        switch (icon) {
+        case 0:
+        case 8:
+        case 9:
+        case 17:
+        case 18:
+        case 24:
+            if (icons[icon].state == 0) {
+                HSD_JObjSetFlags(jobj, JOBJ_HIDDEN);
+            } else {
+                jobj = HSD_JObjGetParent(jobj);
+                icons[icon].state = 2;
+                HSD_ForeachAnim(jobj, JOBJ_TYPE, ALL_TYPE_MASK,
+                                HSD_AObjReqAnim, AOBJ_ARG_AF, 20.0);
+                HSD_JObjAnimAll(jobj);
+            }
+            break;
+        default:
+            if (icons[icon].state == 0) {
+                HSD_ForeachAnim(jobj, JOBJ_TYPE, ALL_TYPE_MASK,
+                                HSD_AObjReqAnim, AOBJ_ARG_AF, 30.0);
+                HSD_JObjAnimAll(jobj);
+            } else {
+                icons[icon].state = 2;
+            }
+            break;
+        }
+    }
+}
+
+/// Character on the grid at world (@p x, @p y), or -1. Same bounds and
+/// selectable test as the vanilla coin drop.
+int mnCharSel_PcIconAt(f32 x, f32 y)
+{
+    int i;
+
+    for (i = 0; i < 0x19; i++) {
+        if (icons[i].state >= 1 && x > icons[i].bound_l &&
+            x < icons[i].bound_r && y < icons[i].bound_u &&
+            y > icons[i].bound_d)
+        {
+            return icons[i].char_kind;
+        }
+    }
+    return -1;
+}
+
 static void mnCharSel_8pSetup(void)
 {
     HSD_GObj* gobj;
@@ -5435,6 +5499,12 @@ s32 mnCharSel_802640A0(void)
 void mnCharSel_Scene_OnEnter(void* arg0)
 {
     PAD_STACK(8);
+#ifdef MELEE_PC
+    if (mn8Css_Claim((CSSData*) arg0)) {
+        mn8Css_OnEnter((CSSData*) arg0);
+        return;
+    }
+#endif
 
     lbCardNew_AllocWorkArea();
     lbCardGame_LoadArchive(0);
@@ -5494,6 +5564,12 @@ void mnCharSel_Scene_OnFrame(void)
 
     PAD_STACK(8);
 
+#ifdef MELEE_PC
+    if (mn8Css_Running()) {
+        mn8Css_OnFrame();
+        return;
+    }
+#endif
     mnCharSel_804D6CEC += 1;
     if (mnCharSel_804D6CF6 <= 1) {
         cache = &lbDvd_GetPreloadCacheScene()->game_cache;
@@ -5610,6 +5686,12 @@ void mnCharSel_Scene_OnExit(void* unused)
     int i;
     u8 type;
 
+#ifdef MELEE_PC
+    if (mn8Css_Running()) {
+        mn8Css_OnExit();
+        return;
+    }
+#endif
     HSD_SisLib_803A5FBC();
     if (mnCharSel_804D6CD0 != NULL) {
         lbArchive_80016EFC(mnCharSel_804D6CD0);

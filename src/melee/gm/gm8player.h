@@ -46,6 +46,7 @@ int gm8Player_PanelCkind(int k);
 void gm8Player_PanelSetCkind(int k, int ckind);
 int gm8Player_PanelLevel(int k);
 void gm8Player_PanelLevelMove(int k, int dir);
+void gm8Player_PanelSetLevel(int k, int level);
 void gm8Player_SetCssActive(bool active);
 const char* gm8Player_CharName(int ckind);
 /// @}
