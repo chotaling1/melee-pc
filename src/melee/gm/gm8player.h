@@ -36,6 +36,8 @@ int gm8Player_HudPlayerCount(int vanilla_count);
 /// Number of fighters the last configured match had.
 int gm8Player_ActiveCount(void);
 
+#define GM8P_COLOR_AUTO 0xFF
+
 /// @name CPU panels, edited from the character select screen.
 /// @{
 int gm8Player_PanelCount(void);
@@ -47,6 +49,12 @@ void gm8Player_PanelSetCkind(int k, int ckind);
 int gm8Player_PanelLevel(int k);
 void gm8Player_PanelLevelMove(int k, int dir);
 void gm8Player_PanelSetLevel(int k, int level);
+/// Costume, or GM8P_COLOR_AUTO for the first one no earlier slot wears.
+int gm8Player_PanelColor(int k);
+void gm8Player_PanelSetColor(int k, int color);
+/// Team in Teams mode: 0 red, 1 blue, 2 green.
+int gm8Player_PanelTeam(int k);
+void gm8Player_PanelSetTeam(int k, int team);
 void gm8Player_SetCssActive(bool active);
 const char* gm8Player_CharName(int ckind);
 /// @}

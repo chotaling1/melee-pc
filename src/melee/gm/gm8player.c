@@ -27,14 +27,16 @@
 typedef struct Gm8Panel {
     u8 ckind; ///< ::CharacterKind, or ChKind_None when the panel is off
     u8 level; ///< CPU level, GM8P_LEVEL_MIN..GM8P_LEVEL_MAX
+    u8 color; ///< costume, or GM8P_COLOR_AUTO to take the first free one
+    u8 team;  ///< team in Teams mode: 0 red, 1 blue, 2 green
 } Gm8Panel;
 
 /* Persist across visits to the CSS, like the vanilla doors do. */
 static Gm8Panel gm8p_panels[GM8P_EXTRA_COUNT] = {
-    { CKind_Mario, 5 },
-    { CKind_Donkey, 5 },
-    { CKind_Link, 5 },
-    { CKind_Kirby, 5 },
+    { CKind_Mario, 5, GM8P_COLOR_AUTO, 0 },
+    { CKind_Donkey, 5, GM8P_COLOR_AUTO, 1 },
+    { CKind_Link, 5, GM8P_COLOR_AUTO, 0 },
+    { CKind_Kirby, 5, GM8P_COLOR_AUTO, 1 },
 };
 static int gm8p_focus;
 static bool gm8p_css_active;
@@ -169,6 +171,26 @@ void gm8Player_PanelSetLevel(int k, int level)
                                                           : level);
 }
 
+int gm8Player_PanelColor(int k)
+{
+    return gm8p_panels[k].color;
+}
+
+void gm8Player_PanelSetColor(int k, int color)
+{
+    gm8p_panels[k].color = (u8) color;
+}
+
+int gm8Player_PanelTeam(int k)
+{
+    return gm8p_panels[k].team;
+}
+
+void gm8Player_PanelSetTeam(int k, int team)
+{
+    gm8p_panels[k].team = (u8) team;
+}
+
 void gm8Player_SetCssActive(bool active)
 {
     gm8p_css_active = active;
@@ -276,7 +298,10 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
 
         *p = *base;
         p->ckind = (s8) panel->ckind;
-        p->color = gm8p_FreeCostume(start, slot, panel->ckind);
+        /* The 8-slot CSS picks costumes itself (team colours included). */
+        p->color = panel->color != GM8P_COLOR_AUTO
+                       ? panel->color
+                       : gm8p_FreeCostume(start, slot, panel->ckind);
         /* Leave slot at 0 so fn_8016D8AC assigns player_id from the array
          * index, which is what the CSS does for ports 1-4 and what
          * ft/fighter.c:695 expects. */
@@ -291,7 +316,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
         /* Stages only publish four spawn points, so the extra fighters reuse
          * them. Overlapping spawns push apart on their own. */
         p->spawn_pos = (s8) (i % 4);
-        p->team = (u8) (i % GM_MAX_TEAMS);
+        p->team = panel->team;
         extras++;
     }
 

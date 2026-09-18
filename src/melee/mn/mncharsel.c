@@ -4334,6 +4334,15 @@ int mnCharSel_PcIconAt(f32 x, f32 y)
     return -1;
 }
 
+/// Frame of the grid model's top-left mode sign (joint 0x24) for @p match_type
+/// in free-for-all or Teams, as mnCharSel_8025EE8C shows it.
+f32 mnCharSel_PcModeFrame(int match_type, bool teams)
+{
+    const CSSModeInfo* info = &mnCharSel_803F0A48.mode_info[match_type];
+
+    return (f32) (teams ? info->mode_teams_frame : info->mode_ffa_frame);
+}
+
 static void mnCharSel_8pSetup(void)
 {
     HSD_GObj* gobj;

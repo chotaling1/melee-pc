@@ -32,6 +32,7 @@
 #ifdef MELEE_PC
 void mnCharSel_PcSetupIcons(HSD_JObj* menu);
 int mnCharSel_PcIconAt(f32 x, f32 y);
+f32 mnCharSel_PcModeFrame(int match_type, bool teams);
 #endif
 
 #endif

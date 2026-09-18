@@ -16,14 +16,19 @@
  * 4-7 into the 8-player CPU panels (gm8player.c), which gm8Player_ConfigureMatch
  * turns into players at match start, the same path the earlier CPU panels used.
  *
- * Milestone 1: one hand, driven by the mouse or any controller.
- *   Point at a panel + A      select it (A again cycles HMN/CPU/Off)
- *   Point at a character + A  give it to the selected panel, then select the
- *                             next panel
- *   X                         cycle HMN/CPU/Off on the selected panel
+ * One hand per connected controller, as on the vanilla screen; the mouse
+ * drives P1's. Each hand picks for its own port's panel unless it has grabbed
+ * another one (a CPU, or any of P5-P8), which it holds until its next pick.
+ *   A on a character          give it to the panel the hand holds; a grabbed
+ *                             panel is let go afterwards
+ *   A on the panel it holds   cycle HMN/CPU/Off (P5-P8: CPU/Off)
+ *   A on another panel        grab it (its own port's panel: take it back)
+ *   A on the top-left sign    toggle free-for-all and Teams
+ *   X / Y                     next / previous costume; team in Teams mode
  *   L / R                     CPU level down / up
- *   D-pad Left / Right        select the previous / next panel
- *   Start                     stage select;  B  back to the main menu
+ *   B                         let go of a grabbed panel, else unpick;
+ *                             hold B to go back to the main menu
+ *   Start                     stage select
  */
 #include "mn8css.h"
 
@@ -95,7 +100,8 @@
 #define TEXT_FONT_Y (0.042F)
 #define TEXT_LINE_TAG (20.0F)
 #define TEXT_LINE_NAME (150.0F)
-#define TEXT_LINE_STATUS (265.0F)
+#define TEXT_LINE_STATUS (250.0F)
+#define TEXT_LINE_COLOR (320.0F)
 
 #define HAND_MIN_X (-35.0F)
 #define HAND_MAX_X (35.0F)
@@ -103,6 +109,22 @@
 #define HAND_MAX_Y (25.0F)
 #define HAND_SPEED (0.9F)
 #define STICK_DEADZONE (0.25F)
+/* Where each hand appears: over its own panel. */
+#define HAND_START_Y (-12.0F)
+/* Hold B this many frames to leave, as mnCharSel_CursorThink. */
+#define HOLD_B_FRAMES 30
+/* The top-left Melee / Teams sign; same bounds as mnCharSel_CursorThink. */
+#define MODE_SIGN_MAX_X (-25.5F)
+#define MODE_SIGN_MIN_Y (22.0F)
+#define MODE_SIGN_JOINT 0x24
+/* Hand model joints (mnCharSel_CursorThink): pose and colour, both
+ * texture-animation frames. */
+#define HAND_POSE_JOINT 2
+#define HAND_COLOR_JOINT 3
+#define HAND_POSE_POINT 0
+#define HAND_POSE_OPEN 2
+
+#define N_TEAMS 3
 
 #define LEVEL_DEFAULT 5
 
@@ -120,10 +142,25 @@ static const u8 mn8css_hidden_joints[] = {
 enum { SLOT_OFF, SLOT_HMN, SLOT_CPU };
 
 typedef struct Mn8Slot {
-    u8 kind;  ///< SLOT_*
-    u8 ckind; ///< ::CharacterKind, or ChKind_None
-    u8 level; ///< CPU level 1-9
+    u8 kind;    ///< SLOT_*
+    u8 ckind;   ///< ::CharacterKind, or ChKind_None
+    u8 level;   ///< CPU level 1-9
+    u8 costume; ///< free-for-all costume
+    u8 team;    ///< Teams mode: 0 red, 1 blue, 2 green
+    u8 teams;   ///< copy of is_teams, only so the label refresh sees a toggle
 } Mn8Slot;
+
+typedef struct Mn8Hand {
+    HSD_JObj* jobj;
+    f32 x;
+    f32 y;
+    s8 target;     ///< slot this hand picks for
+    s8 hover;      ///< panel under the hand, or -1
+    bool shown;    ///< controller connected (P1's hand always is)
+    bool on_sign;  ///< over the Melee / Teams sign
+    bool b_armed;  ///< B released since the screen opened
+    u16 b_held;
+} Mn8Hand;
 
 static struct {
     bool running;
@@ -133,15 +170,12 @@ static struct {
     MnSelectChrDataTable* data;
     HSD_GObj* camera;
     HSD_JObj* background;
-    HSD_JObj* hand;
+    HSD_JObj* menu;
+    Mn8Hand hand[N_PORTS];
     int text_ctx;
     HSD_Text* text[N_SLOTS];
     Mn8Slot slot[N_SLOTS];
     Mn8Slot shown[N_SLOTS]; ///< what the labels currently say
-    int active;
-    int hover_panel;
-    f32 hand_x;
-    f32 hand_y;
     u32 frame;
     u8 pending; ///< CSSPendingSceneChange written on exit
     bool leaving;
@@ -167,6 +201,11 @@ static const char* mn8Css_KindLabel(const Mn8Slot* s, char* buf, int len)
     }
 }
 
+static bool mn8Css_Teams(void)
+{
+    return mn8css.css->vs.start.rules.is_teams != 0;
+}
+
 /// Human is only possible on the four controller ports.
 static void mn8Css_CycleKind(int k)
 {
@@ -178,6 +217,80 @@ static void mn8Css_CycleKind(int k)
                                         : SLOT_HMN;
     } else {
         s->kind = s->kind == SLOT_CPU ? SLOT_OFF : SLOT_CPU;
+    }
+}
+
+/// Whether a joined slot other than @p k already wears @p costume of @p ckind
+/// (free-for-all only: Teams colours come from the team). With @p before_only,
+/// only slots before @p k count.
+static bool mn8Css_CostumeTaken(int k, u8 ckind, u8 costume, bool before_only)
+{
+    int i;
+
+    for (i = 0; i < (before_only ? k : N_SLOTS); i++) {
+        const Mn8Slot* s = &mn8css.slot[i];
+        if (i != k && s->kind != SLOT_OFF && s->ckind == ckind &&
+            s->costume == costume)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Step slot @p k's costume by @p dir (+1 / -1), skipping costumes another
+/// slot of the same character wears, as mnCharSel_CostumeChange. A @p dir of
+/// 0 keeps the current one if it is free, else takes the next free one.
+static void mn8Css_StepCostume(int k, int dir, bool before_only)
+{
+    Mn8Slot* s = &mn8css.slot[k];
+    int count = gm_GetNumCostumesForCKind(s->ckind);
+    int c = s->costume < count ? s->costume : 0;
+    int tries;
+
+    if (dir == 0) {
+        if (!mn8Css_CostumeTaken(k, s->ckind, (u8) c, before_only)) {
+            s->costume = (u8) c;
+            return;
+        }
+        dir = 1;
+    }
+    for (tries = 0; tries < count; tries++) {
+        c = (c + dir + count) % count;
+        if (!mn8Css_CostumeTaken(k, s->ckind, (u8) c, before_only)) {
+            break;
+        }
+    }
+    s->costume = (u8) c;
+}
+
+/// Leaving Teams can leave two of a character in the same costume; move the
+/// later ones along, as the vanilla sign toggle does.
+static void mn8Css_FixCostumes(void)
+{
+    int k;
+
+    for (k = 0; k < N_SLOTS; k++) {
+        if (mn8css.slot[k].ckind != ChKind_None) {
+            mn8Css_StepCostume(k, 0, true);
+        }
+    }
+}
+
+/// Costume slot @p s plays in: its own in free-for-all, its team's colour in
+/// Teams (the three getters mnCharSel_8025E284's colour step uses).
+static u8 mn8Css_MatchColor(const Mn8Slot* s)
+{
+    if (!mn8Css_Teams()) {
+        return s->costume;
+    }
+    switch (s->team) {
+    case 1:
+        return gm_801692BC(s->ckind);
+    case 2:
+        return gm_80169290(s->ckind);
+    default:
+        return gm_80169264(s->ckind);
     }
 }
 
@@ -197,78 +310,67 @@ static void mn8Css_LoadSlots(void)
         s->ckind = mn8Css_IsPlayable(p->ckind) ? p->ckind : ChKind_None;
         s->level = (p->cpu_level >= 1 && p->cpu_level <= 9) ? p->cpu_level
                                                             : LEVEL_DEFAULT;
+        /* In Teams the stored colour is the team's, not a pick. */
+        s->costume = start->rules.is_teams ? 0 : p->color;
+        s->team = p->team < N_TEAMS ? p->team : (u8) (i % 2);
         any_port |= s->kind != SLOT_OFF;
     }
     for (i = N_PORTS; i < N_SLOTS; i++) {
         Mn8Slot* s = &mn8css.slot[i];
-        int ckind = gm8Player_PanelCkind(i - N_PORTS);
+        int k = i - N_PORTS;
+        int ckind = gm8Player_PanelCkind(k);
+        int color = gm8Player_PanelColor(k);
+        int team = gm8Player_PanelTeam(k);
 
         s->kind = mn8Css_IsPlayable(ckind) ? SLOT_CPU : SLOT_OFF;
         s->ckind = mn8Css_IsPlayable(ckind) ? ckind : ChKind_None;
-        s->level = gm8Player_PanelLevel(i - N_PORTS);
+        s->level = gm8Player_PanelLevel(k);
+        s->costume =
+            (color == GM8P_COLOR_AUTO || start->rules.is_teams) ? 0 : color;
+        s->team = team < N_TEAMS ? team : (u8) (i % 2);
     }
     /* First visit: nobody has joined yet, so seat player 1. */
     if (!any_port) {
         mn8css.slot[0].kind = SLOT_HMN;
     }
-}
-
-/// First costume of @p ckind not already worn by an earlier slot.
-static u8 mn8Css_FreeCostume(int upto, u8 ckind,
-                             const u8 costume_of[N_SLOTS])
-{
-    u8 count = gm_GetNumCostumesForCKind(ckind);
-    u8 c;
-    int i;
-
-    for (c = 0; c < count; c++) {
-        bool taken = false;
-        for (i = 0; i < upto; i++) {
-            const Mn8Slot* s = &mn8css.slot[i];
-            if (s->kind != SLOT_OFF && s->ckind == ckind && costume_of[i] == c)
-            {
-                taken = true;
-                break;
-            }
-        }
-        if (!taken) {
-            return c;
-        }
-    }
-    return 0;
+    mn8Css_FixCostumes();
 }
 
 /// Write the selection back where the rest of the game reads it.
 static void mn8Css_CommitSlots(void)
 {
     StartMeleeData* start = &mn8css.css->vs.start;
-    u8 costume_of[N_SLOTS] = { 0 };
     int i;
 
     for (i = 0; i < N_PORTS; i++) {
         const Mn8Slot* s = &mn8css.slot[i];
         PlayerInitData* p = &start->players[i];
 
+        /* Kept even for an empty slot, so the next visit gets it back. */
+        p->team = s->team;
         if (s->kind == SLOT_OFF || s->ckind == ChKind_None) {
             p->slot_type = Gm_PKind_NA;
             continue;
         }
-        costume_of[i] = mn8Css_FreeCostume(i, s->ckind, costume_of);
         p->slot_type = s->kind == SLOT_HMN ? Gm_PKind_Human : Gm_PKind_Cpu;
         p->ckind = (s8) s->ckind;
-        p->color = costume_of[i];
+        p->color = mn8Css_MatchColor(s);
         p->cpu_level = s->level;
         /* The regular VS AI; CpuKind_0 is Training Mode's standing dummy. */
         p->cpu_kind = CpuKind_4;
     }
-    /* Slots 4-7 go through the CPU panels; gm8Player_ConfigureMatch picks
-     * their costumes against the players above. */
+    /* Slots 4-7 go through the CPU panels, which gm8Player_ConfigureMatch
+     * turns into players. */
     for (i = N_PORTS; i < N_SLOTS; i++) {
         const Mn8Slot* s = &mn8css.slot[i];
+        int k = i - N_PORTS;
         bool on = s->kind != SLOT_OFF && s->ckind != ChKind_None;
 
-        gm8Player_PanelSetCkind(i - N_PORTS, on ? s->ckind : ChKind_None);
-        gm8Player_PanelSetLevel(i - N_PORTS, s->level);
+        gm8Player_PanelSetCkind(k, on ? s->ckind : ChKind_None);
+        gm8Player_PanelSetLevel(k, s->level);
+        gm8Player_PanelSetColor(k, on ? mn8Css_MatchColor(s)
+                                      : GM8P_COLOR_AUTO);
+        gm8Player_PanelSetTeam(k, s->team);
     }
 }
 
@@ -279,6 +381,7 @@ static bool mn8Css_CanStart(void)
 {
     int fighters = 0;
     bool port_fighter = false;
+    u32 teams_in = 0;
     int i;
 
     for (i = 0; i < N_SLOTS; i++) {
@@ -291,6 +394,11 @@ static bool mn8Css_CanStart(void)
         }
         fighters++;
         port_fighter |= i < N_PORTS;
+        teams_in |= 1 << s->team;
+    }
+    /* Teams also needs two teams, or the match is over before it starts. */
+    if (mn8Css_Teams() && (teams_in & (teams_in - 1)) == 0) {
+        return false;
     }
     return fighters >= 2 && port_fighter;
 }
@@ -320,18 +428,33 @@ static int mn8Css_PanelAt(f32 x, f32 y)
 
 /* ---- drawing ------------------------------------------------------------ */
 
+static const GXColor mn8css_port_color[N_PORTS] = {
+    { 0xC0, 0x2E, 0x2E, 0xFF }, /* P1 red */
+    { 0x2E, 0x4C, 0xC0, 0xFF }, /* P2 blue */
+    { 0xC0, 0xA0, 0x22, 0xFF }, /* P3 yellow */
+    { 0x2E, 0x96, 0x40, 0xFF }, /* P4 green */
+};
+
 static GXColor mn8Css_PanelColor(int k)
 {
-    static const GXColor port_color[N_PORTS] = {
-        { 0xC0, 0x2E, 0x2E, 0xFF }, /* P1 red */
-        { 0x2E, 0x4C, 0xC0, 0xFF }, /* P2 blue */
-        { 0xC0, 0xA0, 0x22, 0xFF }, /* P3 yellow */
-        { 0x2E, 0x96, 0x40, 0xFF }, /* P4 green */
+    static const GXColor team_color[N_TEAMS] = {
+        { 0xC0, 0x2E, 0x2E, 0xFF }, /* red */
+        { 0x2E, 0x4C, 0xC0, 0xFF }, /* blue */
+        { 0x2E, 0x96, 0x40, 0xFF }, /* green */
     };
     const Mn8Slot* s = &mn8css.slot[k];
 
+    if (s->kind != SLOT_OFF && mn8Css_Teams()) {
+        GXColor c = team_color[s->team];
+        if (s->kind == SLOT_CPU) { /* CPUs a shade darker */
+            c.r = (u8) (c.r * 3 / 4);
+            c.g = (u8) (c.g * 3 / 4);
+            c.b = (u8) (c.b * 3 / 4);
+        }
+        return c;
+    }
     if (s->kind == SLOT_HMN) {
-        return port_color[k];
+        return mn8css_port_color[k < N_PORTS ? k : 0];
     }
     if (s->kind == SLOT_CPU) {
         return (GXColor){ 0x5E, 0x60, 0x68, 0xFF };
@@ -392,9 +515,9 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
 {
     static const GXColor frame_plain = { 0x0C, 0x0C, 0x10, 0xFF };
     static const GXColor frame_hover = { 0xE0, 0xE2, 0xEA, 0xFF };
-    static const GXColor frame_active = { 0xFF, 0xD6, 0x2E, 0xFF };
     static const GXColor tray = { 0x12, 0x16, 0x24, 0xFF };
     int k;
+    int p;
 
     /* Pass 2 only. The labels draw in pass 2 as well (HSD_SisLib_803A84BC
      * skips every other pass) and their gobjs come after this one on the same
@@ -409,10 +532,24 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     for (k = 0; k < N_SLOTS; k++) {
         f32 x0 = mn8Css_PanelLeft(k);
         f32 x1 = x0 + PANEL_WIDTH;
-        GXColor frame = k == mn8css.active        ? frame_active
-                        : k == mn8css.hover_panel ? frame_hover
-                                                  : frame_plain;
-        f32 b = k == mn8css.active ? PANEL_BORDER * 1.6F : PANEL_BORDER;
+        GXColor frame = frame_plain;
+        f32 b = PANEL_BORDER;
+
+        /* Held by a hand: that hand's colour, thick. Else white on hover. */
+        for (p = 0; p < N_PORTS; p++) {
+            const Mn8Hand* h = &mn8css.hand[p];
+            if (h->shown && h->hover == k) {
+                frame = frame_hover;
+            }
+        }
+        for (p = 0; p < N_PORTS; p++) {
+            const Mn8Hand* h = &mn8css.hand[p];
+            if (h->shown && h->target == k) {
+                frame = mn8css_port_color[p];
+                b = PANEL_BORDER * 1.8F;
+                break;
+            }
+        }
 
         mn8Css_Rect(x0, PANEL_BOTTOM, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
         mn8Css_Rect(x0 + b, PANEL_BOTTOM + b, x1 - b, PANEL_TOP - b, PANEL_Z,
@@ -447,6 +584,7 @@ static void mn8Css_CreateText(int k)
     HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_TAG, "%s", tag);
     HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_NAME, "%s", "-");
     HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_STATUS, "%s", "-");
+    HSD_SisLib_803A6B98(text, box_w * 0.5F, TEXT_LINE_COLOR, "%s", " ");
     mn8css.text[k] = text;
     /* force the first refresh to rewrite both lines */
     mn8css.shown[k].kind = 0xFF;
@@ -466,6 +604,25 @@ static const char* mn8Css_PanelName(const Mn8Slot* s)
     return gm8Player_CharName(s->ckind);
 }
 
+/// Fourth line: the costume, or the team in Teams mode. Costumes are numbered
+/// until the panels get the real portraits.
+static const char* mn8Css_ColorLabel(const Mn8Slot* s, char* buf, int len)
+{
+    static const char* const team_name[N_TEAMS] = { "Red", "Blue", "Green" };
+
+    if (s->kind == SLOT_OFF) {
+        return " ";
+    }
+    if (mn8Css_Teams()) {
+        return team_name[s->team];
+    }
+    if (s->ckind == ChKind_None) {
+        return " ";
+    }
+    snprintf(buf, len, "Color %d", s->costume + 1);
+    return buf;
+}
+
 static void mn8Css_RefreshText(void)
 {
     char buf[24];
@@ -475,63 +632,195 @@ static void mn8Css_RefreshText(void)
         const Mn8Slot* s = &mn8css.slot[k];
         Mn8Slot* shown = &mn8css.shown[k];
 
+        mn8css.slot[k].teams = mn8Css_Teams();
         if (shown->kind == s->kind && shown->ckind == s->ckind &&
-            shown->level == s->level)
+            shown->level == s->level && shown->costume == s->costume &&
+            shown->team == s->team && shown->teams == s->teams)
         {
             continue;
         }
         HSD_SisLib_803A70A0(mn8css.text[k], 1, "%s", mn8Css_PanelName(s));
         HSD_SisLib_803A70A0(mn8css.text[k], 2, "%s",
                             mn8Css_KindLabel(s, buf, sizeof(buf)));
+        HSD_SisLib_803A70A0(mn8css.text[k], 3, "%s",
+                            mn8Css_ColorLabel(s, buf, sizeof(buf)));
         *shown = *s;
     }
 }
 
 /* ---- input -------------------------------------------------------------- */
 
-static void mn8Css_MoveHand(void)
+static void mn8Css_MoveHand(int port)
 {
-    f32 sx = 0.0F;
-    f32 sy = 0.0F;
-    Vec3 cur;
-    Vec3 target;
+    Mn8Hand* h = &mn8css.hand[port];
+    f32 sx = HSD_PadCopyStatus[port].nml_stickX;
+    f32 sy = HSD_PadCopyStatus[port].nml_stickY;
+
+    if (sx > STICK_DEADZONE || sx < -STICK_DEADZONE) {
+        h->x += sx * HAND_SPEED;
+    }
+    if (sy > STICK_DEADZONE || sy < -STICK_DEADZONE) {
+        h->y += sy * HAND_SPEED;
+    }
+
+    /* The mouse drives P1's hand while it moves, as on the vanilla screen. */
+    if (port == 0) {
+        Vec3 cur = { h->x, h->y, 0.0F };
+        Vec3 target;
+        if (mnMouse_GetPlanePoint(GET_COBJ(mn8css.camera), &cur, &target)) {
+            h->x = target.x;
+            h->y = target.y;
+        }
+    }
+
+    if (h->x < HAND_MIN_X) h->x = HAND_MIN_X;
+    if (h->x > HAND_MAX_X) h->x = HAND_MAX_X;
+    if (h->y < HAND_MIN_Y) h->y = HAND_MIN_Y;
+    if (h->y > HAND_MAX_Y) h->y = HAND_MAX_Y;
+}
+
+/// Hand pose, colour and position, as updateCursorDisplay in mncharsel.c.
+static void mn8Css_PoseHand(int port)
+{
+    static const u8 team_hand_color[N_TEAMS] = { 0, 1, 3 };
+    Mn8Hand* h = &mn8css.hand[port];
+    HSD_JObj* jobj;
+    int color;
+
+    if (!h->shown) {
+        HSD_JObjSetFlagsAll(h->jobj, JOBJ_HIDDEN);
+        return;
+    }
+    HSD_JObjClearFlagsAll(h->jobj, JOBJ_HIDDEN);
+
+    /* Open over the grid, pointing everywhere else. */
+    lb_80011E24(h->jobj, &jobj, HAND_POSE_JOINT, -1);
+    HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim, AOBJ_ARG_AF,
+                    (f32) (h->y < 0.2F || h->y > MODE_SIGN_MIN_Y
+                               ? HAND_POSE_POINT
+                               : HAND_POSE_OPEN));
+    HSD_JObjAnimAll(jobj);
+    HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                    AOBJ_ARG_AOV, NULL);
+
+    /* Four colours per port: the port's own, or its team's in Teams mode;
+     * flashing through all four over the sign. */
+    color = mn8Css_Teams() ? team_hand_color[mn8css.slot[port].team] : port;
+    if (h->on_sign) {
+        color = (int) (mn8css.frame & 3);
+    }
+    lb_80011E24(h->jobj, &jobj, HAND_COLOR_JOINT, -1);
+    HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim, AOBJ_ARG_AF,
+                    (f32) (color + port * 4));
+    HSD_JObjAnimAll(jobj);
+    HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                    AOBJ_ARG_AOV, NULL);
+
+    /* The model's own Z is not on the menu plane, so pin it, and re-run its
+     * animation to refresh the matrices. */
+    HSD_JObjSetTranslateX(h->jobj, h->x);
+    HSD_JObjSetTranslateY(h->jobj, h->y);
+    HSD_JObjSetTranslateZ(h->jobj, 0.0F);
+    HSD_JObjAnimAll(h->jobj);
+}
+
+/// The hand that has grabbed slot @p k away from its home panel, or -1.
+static int mn8Css_HolderOf(int k)
+{
     int p;
 
     for (p = 0; p < N_PORTS; p++) {
-        sx += HSD_PadCopyStatus[p].nml_stickX;
-        sy += HSD_PadCopyStatus[p].nml_stickY;
+        if (p != k && mn8css.hand[p].shown && mn8css.hand[p].target == k) {
+            return p;
+        }
     }
-    if (sx > 1.0F) sx = 1.0F;
-    if (sx < -1.0F) sx = -1.0F;
-    if (sy > 1.0F) sy = 1.0F;
-    if (sy < -1.0F) sy = -1.0F;
-    if (sx > STICK_DEADZONE || sx < -STICK_DEADZONE) {
-        mn8css.hand_x += sx * HAND_SPEED;
-    }
-    if (sy > STICK_DEADZONE || sy < -STICK_DEADZONE) {
-        mn8css.hand_y += sy * HAND_SPEED;
-    }
+    return -1;
+}
 
-    /* The mouse wins while it moves, exactly as on the vanilla screen. */
-    cur.x = mn8css.hand_x;
-    cur.y = mn8css.hand_y;
-    cur.z = 0.0F;
-    if (mnMouse_GetPlanePoint(GET_COBJ(mn8css.camera), &cur, &target)) {
-        mn8css.hand_x = target.x;
-        mn8css.hand_y = target.y;
+/// Hand @p port lets go of a grabbed panel and goes back to its own.
+static void mn8Css_Release(int port)
+{
+    mn8css.hand[port].target = (s8) port;
+}
+
+/// A on panel @p k.
+static void mn8Css_ClickPanel(int port, int k)
+{
+    Mn8Hand* h = &mn8css.hand[port];
+    int holder;
+
+    if (k == h->target) {
+        mn8Css_CycleKind(k);
+        if (mn8css.slot[k].kind == SLOT_OFF && k != port) {
+            mn8Css_Release(port);
+        }
+        sfxMove();
+        return;
     }
+    if (k == port) {
+        /* Your own panel: always yours to take back. */
+        holder = mn8Css_HolderOf(k);
+        if (holder >= 0) {
+            mn8Css_Release(holder);
+        }
+        h->target = (s8) port;
+        sfxMove();
+        return;
+    }
+    /* Someone else's: free unless another hand holds it, and a port's panel
+     * only while no human sits there. */
+    holder = mn8Css_HolderOf(k);
+    if (holder >= 0 ||
+        (k < N_PORTS && mn8css.hand[k].shown && mn8css.slot[k].kind == SLOT_HMN))
+    {
+        sfxBack();
+        return;
+    }
+    h->target = (s8) k;
+    if (mn8css.slot[k].kind == SLOT_OFF) {
+        mn8css.slot[k].kind = SLOT_CPU;
+    }
+    sfxMove();
+}
 
-    if (mn8css.hand_x < HAND_MIN_X) mn8css.hand_x = HAND_MIN_X;
-    if (mn8css.hand_x > HAND_MAX_X) mn8css.hand_x = HAND_MAX_X;
-    if (mn8css.hand_y < HAND_MIN_Y) mn8css.hand_y = HAND_MIN_Y;
-    if (mn8css.hand_y > HAND_MAX_Y) mn8css.hand_y = HAND_MAX_Y;
+/// A on character @p ckind.
+static void mn8Css_Pick(int port, int ckind)
+{
+    Mn8Hand* h = &mn8css.hand[port];
+    int k = h->target;
+    Mn8Slot* s = &mn8css.slot[k];
 
-    /* As mnCharSel_CursorThink: the model's own Z is not on the menu plane,
-     * so pin it, and re-run its animation to refresh the matrices. */
-    HSD_JObjSetTranslateX(mn8css.hand, mn8css.hand_x);
-    HSD_JObjSetTranslateY(mn8css.hand, mn8css.hand_y);
-    HSD_JObjSetTranslateZ(mn8css.hand, 0.0F);
-    HSD_JObjAnimAll(mn8css.hand);
+    if (s->kind == SLOT_OFF) {
+        /* Picking for your own panel joins you; a grabbed one joins as CPU. */
+        s->kind = k == port ? SLOT_HMN : SLOT_CPU;
+    }
+    if (s->ckind != ckind) {
+        s->ckind = (u8) ckind;
+        s->costume = 0;
+    }
+    mn8Css_StepCostume(k, 0, false);
+    if (k != port) {
+        mn8Css_Release(port);
+    }
+    sfxForward();
+}
+
+static void mn8Css_ToggleTeams(void)
+{
+    HSD_JObj* sign;
+    u8* is_teams = &mn8css.css->vs.start.rules.is_teams;
+
+    *is_teams = (*is_teams + 1) & 1;
+    if (!*is_teams) {
+        mn8Css_FixCostumes();
+    }
+    lb_80011E24(mn8css.menu, &sign, MODE_SIGN_JOINT, -1);
+    HSD_ForeachAnim(sign, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim, AOBJ_ARG_AF,
+                    mnCharSel_PcModeFrame(mn8css.css->match_type, *is_teams));
+    HSD_JObjAnimAll(sign);
+    HSD_ForeachAnim(sign, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                    AOBJ_ARG_AOV, NULL);
+    sfxMove();
 }
 
 static void mn8Css_Leave(u8 pending)
@@ -541,84 +830,108 @@ static void mn8Css_Leave(u8 pending)
     gm_801A4B60();
 }
 
-static void mn8Css_HandThink(HSD_GObj* gobj)
+/// One hand's frame. Returns true when it asked to leave.
+static bool mn8Css_HandInput(int port)
 {
-    u32 trig = 0;
-    int p;
+    Mn8Hand* h = &mn8css.hand[port];
+    u32 trig = HSD_PadCopyStatus[port].trigger;
+    u32 held = HSD_PadCopyStatus[port].button;
+    Mn8Slot* s;
 
-    if (mn8css.leaving) {
-        return;
+    /* Every hand is on screen for P1 (mouse); the others only with a pad. */
+    h->shown = port == 0 || HSD_PadCopyStatus[port].err == 0;
+    if (!h->shown) {
+        h->target = (s8) port;
+        h->hover = -1;
+        return false;
     }
-    for (p = 0; p < N_PORTS; p++) {
-        trig |= HSD_PadCopyStatus[p].trigger;
-    }
-
-    mn8Css_MoveHand();
-    mn8css.hover_panel = mn8Css_PanelAt(mn8css.hand_x, mn8css.hand_y);
+    mn8Css_MoveHand(port);
+    h->hover = (s8) mn8Css_PanelAt(h->x, h->y);
+    h->on_sign = h->x < MODE_SIGN_MAX_X && h->y > MODE_SIGN_MIN_Y;
+    s = &mn8css.slot[h->target];
 
     if (trig & HSD_PAD_A) {
-        int ckind = mnCharSel_PcIconAt(mn8css.hand_x, mn8css.hand_y);
+        int ckind = mnCharSel_PcIconAt(h->x, h->y);
 
-        pc_log_line("[8css] A at (%.1f, %.1f): panel=%d icon=%d active=P%d",
-                    mn8css.hand_x, mn8css.hand_y, mn8css.hover_panel, ckind,
-                    mn8css.active + 1);
-
-        if (mn8css.hover_panel >= 0) {
-            if (mn8css.hover_panel != mn8css.active) {
-                mn8css.active = mn8css.hover_panel;
-            } else {
-                mn8Css_CycleKind(mn8css.active);
-            }
-            sfxMove();
+        pc_log_line("[8css] P%d A at (%.1f, %.1f): panel=%d icon=%d holds=P%d",
+                    port + 1, h->x, h->y, h->hover, ckind, h->target + 1);
+        if (h->on_sign) {
+            mn8Css_ToggleTeams();
+        } else if (h->hover >= 0) {
+            mn8Css_ClickPanel(port, h->hover);
         } else if (mn8Css_IsPlayable(ckind)) {
-            Mn8Slot* s = &mn8css.slot[mn8css.active];
-
-            s->ckind = (u8) ckind;
-            /* One hand picks for everyone, so an empty slot joins as a CPU;
-             * only P1 is assumed to be the person holding it. X switches a
-             * port slot to HMN for a friend on that controller. */
-            if (s->kind == SLOT_OFF) {
-                s->kind = mn8css.active == 0 ? SLOT_HMN : SLOT_CPU;
-            }
-            /* Move on, so filling eight slots is eight clicks. */
-            mn8css.active = (mn8css.active + 1) % N_SLOTS;
-            sfxForward();
+            mn8Css_Pick(port, ckind);
         }
     }
-    if (trig & HSD_PAD_X) {
-        mn8Css_CycleKind(mn8css.active);
-        sfxMove();
+    if ((trig & (HSD_PAD_X | HSD_PAD_Y)) && s->kind != SLOT_OFF) {
+        int dir = (trig & HSD_PAD_X) ? 1 : -1;
+
+        if (mn8Css_Teams()) {
+            s->team = (u8) ((s->team + dir + N_TEAMS) % N_TEAMS);
+            sfxMove();
+        } else if (s->ckind != ChKind_None) {
+            u8 before = s->costume;
+            mn8Css_StepCostume(h->target, dir, false);
+            if (s->costume != before) {
+                sfxMove();
+            }
+        }
     }
-    if (trig & (HSD_PAD_L | HSD_PAD_R)) {
-        Mn8Slot* s = &mn8css.slot[mn8css.active];
+    if ((trig & (HSD_PAD_L | HSD_PAD_R)) && s->kind == SLOT_CPU) {
         int level = s->level + ((trig & HSD_PAD_R) ? 1 : -1);
 
         s->level = (u8) (level < 1 ? 1 : level > 9 ? 9 : level);
         sfxMove();
     }
-    if (trig & HSD_PAD_DPADLEFT) {
-        mn8css.active = (mn8css.active + N_SLOTS - 1) % N_SLOTS;
-        sfxMove();
-    }
-    if (trig & HSD_PAD_DPADRIGHT) {
-        mn8css.active = (mn8css.active + 1) % N_SLOTS;
-        sfxMove();
-    }
 
-    mn8Css_RefreshText();
+    /* B: let go, else unpick; held, back to the menu. A B still held from the
+     * previous screen does not count until it is let go. */
+    if (trig & HSD_PAD_B) {
+        if (h->target != port) {
+            mn8Css_Release(port);
+            sfxBack();
+        } else if (s->ckind != ChKind_None) {
+            s->ckind = ChKind_None;
+            sfxBack();
+        }
+    }
+    if (!(held & HSD_PAD_B)) {
+        h->b_armed = true;
+        h->b_held = 0;
+    } else if (h->b_armed && ++h->b_held > HOLD_B_FRAMES) {
+        sfxBack();
+        mn8Css_Leave(2); /* CSSPendingSceneChange_2: back to the menu */
+        return true;
+    }
 
     if (trig & HSD_PAD_START) {
         if (mn8Css_CanStart()) {
             mn8Css_CommitSlots();
             sfxForward();
             mn8Css_Leave(1); /* same value the vanilla screen uses for Start */
-        } else {
-            sfxBack();
+            return true;
         }
-    } else if (trig & HSD_PAD_B) {
         sfxBack();
-        mn8Css_Leave(2); /* CSSPendingSceneChange_2: back to the menu */
     }
+    return false;
+}
+
+static void mn8Css_InputThink(HSD_GObj* gobj)
+{
+    int p;
+
+    if (mn8css.leaving) {
+        return;
+    }
+    for (p = 0; p < N_PORTS; p++) {
+        if (mn8Css_HandInput(p)) {
+            return;
+        }
+    }
+    for (p = 0; p < N_PORTS; p++) {
+        mn8Css_PoseHand(p);
+    }
+    mn8Css_RefreshText();
 }
 
 static void mn8Css_BackgroundThink(HSD_GObj* gobj)
@@ -713,7 +1026,7 @@ static void mn8Css_BuildScene(void)
 
     /* Character grid, held at frame 0 like the vanilla screen. */
     gobj = GObj_Create(4, 5, 0x80);
-    menu = mn8Css_LoadModel(&models->menu);
+    menu = mn8css.menu = mn8Css_LoadModel(&models->menu);
     HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, menu);
     GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 1, 0x80);
     HSD_JObjReqAnimAll(menu, 0.0F);
@@ -721,6 +1034,17 @@ static void mn8Css_BuildScene(void)
     HSD_ForeachAnim(menu, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
                     AOBJ_ARG_AOV, NULL);
     mnCharSel_PcSetupIcons(menu);
+    {
+        HSD_JObj* sign;
+        lb_80011E24(menu, &sign, MODE_SIGN_JOINT, -1);
+        HSD_ForeachAnim(sign, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim,
+                        AOBJ_ARG_AF,
+                        mnCharSel_PcModeFrame(mn8css.css->match_type,
+                                              mn8Css_Teams()));
+        HSD_JObjAnimAll(sign);
+        HSD_ForeachAnim(sign, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                        AOBJ_ARG_AOV, NULL);
+    }
     /* The grid model carries the vanilla player row too; clear it out so
      * only the panels below are left there. Children only: the root spans
      * the whole screen. */
@@ -759,24 +1083,35 @@ static void mn8Css_BuildScene(void)
         hint->box_size_x = w / hint->font_size.x;
         hint->box_size_y = 60.0F;
         HSD_SisLib_803A6B98(hint, hint->box_size_x * 0.5F, 0.0F, "%s",
-                            "A on a panel: select it   A on a character: "
-                            "give it to the yellow panel   X: HMN, CPU or Off"
-                            "   L and R: level   Start: go");
+                            "A on a character: pick   A on a panel: grab it "
+                            "or HMN, CPU, Off   X and Y: color or team   "
+                            "L and R: level   hold B: back   Start: go");
     }
 
-    /* Hand, which also runs the screen's input. */
+    /* Input, then one hand per port, drawn over everything. */
     gobj = GObj_Create(4, 5, 0x80);
-    mn8css.hand = mn8Css_LoadModel(&models->hand);
-    HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, mn8css.hand);
-    GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 3, 0x80);
-    HSD_GObj_SetupProc(gobj, mn8Css_HandThink, 1);
-    HSD_JObjReqAnimAll(mn8css.hand, 0.0F);
-    HSD_JObjAnimAll(mn8css.hand);
-    HSD_ForeachAnim(mn8css.hand, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
-                    AOBJ_ARG_AOV, NULL);
-    HSD_JObjClearFlagsAll(mn8css.hand, JOBJ_HIDDEN);
-    mn8css.hand_x = 0.0F;
-    mn8css.hand_y = 8.0F;
+    HSD_GObj_SetupProc(gobj, mn8Css_InputThink, 1);
+    for (i = 0; i < N_PORTS; i++) {
+        Mn8Hand* h = &mn8css.hand[i];
+
+        gobj = GObj_Create(4, 5, 0x80);
+        h->jobj = mn8Css_LoadModel(&models->hand);
+        HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, h->jobj);
+        GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 3, 0x80);
+        HSD_JObjReqAnimAll(h->jobj, 0.0F);
+        HSD_JObjAnimAll(h->jobj);
+        HSD_ForeachAnim(h->jobj, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
+                        AOBJ_ARG_AOV, NULL);
+        h->x = mn8Css_PanelLeft(i) + PANEL_WIDTH * 0.5F;
+        h->y = HAND_START_Y;
+        h->target = (s8) i;
+        h->hover = -1;
+        h->shown = i == 0 || HSD_PadCopyStatus[i].err == 0;
+        h->on_sign = false;
+        h->b_armed = false;
+        h->b_held = 0;
+        mn8Css_PoseHand(i);
+    }
 }
 
 bool mn8Css_Claim(CSSData* css)
@@ -798,8 +1133,6 @@ void mn8Css_OnEnter(CSSData* css)
     mn8css.frame = 0;
     mn8css.pending = 0;
     mn8css.leaving = false;
-    mn8css.active = 0;
-    mn8css.hover_panel = -1;
 
     /* Mirrors mnCharSel_Scene_OnEnter for VS. */
     lbCardNew_AllocWorkArea();
@@ -842,7 +1175,7 @@ void mn8Css_OnFrame(void)
         const Mn8Slot* s = &mn8css.slot[i];
         if (s->kind != SLOT_OFF && s->ckind != ChKind_None) {
             cache->entries[i].char_id = s->ckind;
-            cache->entries[i].color = 0;
+            cache->entries[i].color = mn8Css_MatchColor(s);
         } else {
             cache->entries[i].char_id = ChKind_None;
         }
