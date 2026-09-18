@@ -111,10 +111,6 @@
  * rise from MOTION_DROP below their place; leaving ones sink that far. */
 #define MOTION_EASE (0.25F)
 #define MOTION_DROP (30.0F)
-/* Opaque tray behind the panels, covering the vanilla player row from just
- * under the grid to past the bottom of the screen. */
-#define TRAY_TOP (-1.1F)
-#define TRAY_BOTTOM (-32.0F)
 
 /* Text inside a panel. font_size is world units per text pixel; box sizes and
  * line offsets below are in text pixels. */
@@ -195,6 +191,14 @@ static const u8 mn8css_hidden_joints[] = {
     0x75, 0x76, 0x77, 0x78, 0x79,       /* P2 */
     0x7A, 0x7B, 0x7C, 0x7D, 0x7E,       /* P3 */
     0x7F, 0x80, 0x81, 0x82, 0x83,       /* P4 */
+    /* The four doors themselves, from mnCharSel_803F0DFC: emblem, portrait,
+     * team badge, door frame, background, HMN/CPU toggle, slider name, CPU
+     * slider, handicap slider. Some hang below the grid from joints above
+     * it, so mn8Css_HideBelowGrid misses them. */
+    0x2E, 0x33, 0x38, 0x85, 0x29, 0xA6, 0x3D, 0x41, 0x40, /* door 1 */
+    0x2F, 0x34, 0x39, 0x8D, 0x2A, 0xA8, 0x43, 0x47, 0x46, /* door 2 */
+    0x30, 0x35, 0x3A, 0x95, 0x2B, 0xAA, 0x49, 0x4D, 0x4C, /* door 3 */
+    0x31, 0x36, 0x3B, 0x9D, 0x2C, 0xAC, 0x4F, 0x53, 0x52, /* door 4 */
 };
 
 enum { SLOT_OFF, SLOT_HMN, SLOT_CPU };
@@ -846,7 +850,6 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
 {
     static const GXColor frame_plain = { 0x0C, 0x0C, 0x10, 0xFF };
     static const GXColor frame_hover = { 0xE0, 0xE2, 0xEA, 0xFF };
-    static const GXColor tray = { 0x12, 0x16, 0x24, 0xFF };
     static const GXColor add_fill = { 0x26, 0x2A, 0x36, 0xFF };
     static const GXColor plus_color = { 0xE0, 0xE2, 0xEA, 0xFF };
     int k;
@@ -860,8 +863,6 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
         return;
     }
     mn8Css_BeginQuads();
-    /* Tray over the whole vanilla player row, whichever model draws it. */
-    mn8Css_Rect(-80.0F, TRAY_BOTTOM, 80.0F, TRAY_TOP, 0.0F, tray);
     for (k = 0; k <= N_SLOTS; k++) {
         f32 x0 = mn8css.motion[k].x0;
         f32 x1 = x0 + mn8css.motion[k].w;
