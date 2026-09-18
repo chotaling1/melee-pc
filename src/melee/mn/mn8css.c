@@ -790,6 +790,7 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
     static const GXColor frame_hover = { 0xE0, 0xE2, 0xEA, 0xFF };
     static const GXColor tray = { 0x12, 0x16, 0x24, 0xFF };
     static const GXColor add_fill = { 0x26, 0x2A, 0x36, 0xFF };
+    static const GXColor plus_color = { 0xE0, 0xE2, 0xEA, 0xFF };
     int k;
     int p;
     int t;
@@ -831,6 +832,18 @@ static void mn8Css_Draw(HSD_GObj* gobj, int pass)
         mn8Css_Rect(x0, y1, x1, PANEL_TOP, PANEL_Z - 0.1F, frame);
         mn8Css_Rect(x0 + b, y1 + b, x1 - b, PANEL_TOP - b, PANEL_Z,
                     k == TILE_ADD ? add_fill : mn8Css_PanelColor(k));
+        if (k == TILE_ADD) {
+            /* A plus sign above the "Add" label. */
+            f32 cx = (x0 + x1) * 0.5F;
+            f32 cy = PANEL_TOP - mn8css.panel_h * 0.5F + 1.2F;
+            f32 arm = 1.3F;
+            f32 bar = 0.25F;
+
+            mn8Css_Rect(cx - arm, cy - bar, cx + arm, cy + bar, PANEL_Z,
+                        plus_color);
+            mn8Css_Rect(cx - bar, cy - arm, cx + bar, cy + arm, PANEL_Z,
+                        plus_color);
+        }
     }
     mn8Css_BeginTexQuads();
     for (k = 0; k < N_SLOTS; k++) {
@@ -897,8 +910,8 @@ static void mn8Css_CreateAddText(int t)
     f32 cx = text->box_size_x * 0.5F;
     f32 mid = mn8css.panel_h * 0.5F;
 
-    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(mid - 1.2F), "%s", "+");
-    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(mid + 0.6F), "%s", "Add");
+    /* The "+" above it is drawn as quads: the menu font has no '+'. */
+    HSD_SisLib_803A6B98(text, cx, mn8Css_LineY(mid + 1.2F), "%s", "Add");
     mn8css.add_text = text;
 }
 
@@ -1698,10 +1711,9 @@ static void mn8Css_BuildScene(void)
         hint->box_size_x = w / hint->font_size.x;
         hint->box_size_y = 60.0F;
         HSD_SisLib_803A6B98(hint, hint->box_size_x * 0.5F, 0.0F, "%s",
-                            "A on a character: pick   A on a panel: grab it, "
-                            "again for HMN, CPU or Off   A on Add: join or add "
-                            "a CPU   X and Y: color or team   L and R: level   "
-                            "hold B: back");
+                            "A: pick, grab a panel, or Add   A again on a panel: "
+                            "HMN, CPU or Off   X and Y: color or team   "
+                            "L and R: level   hold B: back");
     }
 
     /* A coin per slot, on the grid, under the hands. */
