@@ -5,6 +5,28 @@
 #include <melee/lb/lb_00B0.h>
 
 #include "pc/pc.h"
+#include "pc/widescreen.h"
+
+/// Widescreen draws each camera with its horizontal projection divided by
+/// the widening (setupNormalCamera), but lbVector_WorldToScreen, which the
+/// inversion below runs through, keeps GameCube semantics. Map the mouse's x
+/// back into those: stretch it about the viewport's centre by the same
+/// factor.
+static void mnMouse_Unwiden(HSD_CObj* cobj, f32* mx)
+{
+    f32 s;
+    f32 cx;
+
+    if (HSD_CObjGetFlags(cobj) & PC_COBJ_FILL_FRAME) {
+        return;
+    }
+    s = pc_widescreen_frame_scale();
+    if (s <= 1.0F) {
+        return;
+    }
+    cx = 0.5F * (cobj->viewport.xmin + cobj->viewport.xmax);
+    *mx = cx + (*mx - cx) * s;
+}
 
 bool mnMouse_ScreenToPlane(HSD_CObj* cobj, f32 mx, f32 my, const Vec3* ref,
                            const Vec3* u, const Vec3* v, Vec3* out)
@@ -15,6 +37,7 @@ bool mnMouse_ScreenToPlane(HSD_CObj* cobj, f32 mx, f32 my, const Vec3* ref,
     if (cobj == NULL) {
         return false;
     }
+    mnMouse_Unwiden(cobj, &mx);
 
     // Menu cameras are fixed, but the projection type and parameters come
     // from disc data, so invert lbVector_WorldToScreen numerically: linearize
@@ -97,6 +120,7 @@ int mnMouse_PickRow(HSD_CObj* cobj, HSD_JObj** anchors, const bool* enabled,
     if ((!moved && !*clicked) || cobj == NULL) {
         return MN_MOUSE_IDLE;
     }
+    mnMouse_Unwiden(cobj, &mx);
     if (n > MN_MOUSE_MAX_ROWS) {
         n = MN_MOUSE_MAX_ROWS;
     }
