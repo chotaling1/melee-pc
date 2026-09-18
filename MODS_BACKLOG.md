@@ -194,8 +194,8 @@ be updated to match.
   `resources/eight-player.rml`. ARAM raised to 32 MB (`93a9298`) so the extras
   can be any character. Also added `gm8Player_SanitizeSlots` in the VS scene
   setup so modes that build player lists by hand never see live slots 6-7.
-  Not yet confirmed: eight *unique* characters under 32 MB, and a
-  Classic/Adventure run with the slot guard.
+  Confirmed by Chuck the same day: eight *unique* characters load under
+  32 MB ARAM, and Classic still works with the slot guard.
 - Follow-ups for the panels: hold-to-repeat when cycling characters; the
   mouse wheel sends D-pad taps on the CSS, so scrolling changes the focused
   panel's character.
