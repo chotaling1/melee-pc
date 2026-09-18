@@ -127,7 +127,7 @@ struct ifMagnify {
     int x8;
     int xC;
     int x10;
-    ifMagnifyPlayer player[6];
+    ifMagnifyPlayer player[GM_MAX_PLAYERS];
     HSD_ImageDesc image_descs[5];
     u8 pad[0xF0 - 0xEC];
 };
@@ -265,7 +265,7 @@ struct ifStock_804A1378_x204 {
 struct ifStock_804A1378 {
     DiscU32* x0; /* DynamicModelDesc*[] in the archive */
     DynamicModelDesc* x4;
-    struct ifStock_804A1378_per_player player[6];
+    struct ifStock_804A1378_per_player player[GM_MAX_PLAYERS];
     HSD_GObj* gobj;
     HSD_JObj* jobj;
     char pad1F0[0x1F4 - 0x1F0];
@@ -273,7 +273,7 @@ struct ifStock_804A1378 {
     HSD_JObj* jobj_b;
     HSD_JObj* jobj_c;
     HSD_JObj* jobj_d;
-    struct ifStock_804A1378_x204 x204[6];
+    struct ifStock_804A1378_x204 x204[GM_MAX_PLAYERS];
 };
 #define IFSTOCK_MODEL0(stock) ((DynamicModelDesc*) (uintptr_t) (stock)->x0[0].v)
 

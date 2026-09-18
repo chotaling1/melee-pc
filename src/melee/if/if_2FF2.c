@@ -98,13 +98,13 @@ struct un_804A1F58_x8_t {
 /* 4A1F58 */ static struct un_804A1F58_t {
     unsigned int x0;
     char pad_x4[4];
-    struct un_804A1F58_x8_t x8[6];
+    struct un_804A1F58_x8_t x8[GM_MAX_PLAYERS];
 } un_804A1F58;
 
 static inline int fn_802FF218_inline(HSD_GObj* arg0)
 {
     int x;
-    for (x = 0; x < 6; x++) {
+    for (x = 0; x < GM_MAX_PLAYERS; x++) {
         if (un_804A1F58.x8[x].x0 == arg0) {
             return x;
         }
@@ -187,7 +187,7 @@ void un_802FF4FC(void)
 {
     int i;
     struct un_804A1F58_t* base = &un_804A1F58;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         struct un_804A1F58_x8_t* thing;
         thing = (0, &base->x8[i]);
         if (thing->x0) {
@@ -205,7 +205,7 @@ void un_802FF570(void)
     int i;
     struct un_804A1F58_x8_t* thing;
     HSD_Text* text;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         thing = &un_804A1F58.x8[i];
         thing->x10 = 1;
         text = thing->x4;
@@ -219,7 +219,7 @@ void un_802FF620(void)
 {
     int i;
     struct un_804A1F58_t* base = &un_804A1F58;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         struct un_804A1F58_x8_t* thing = (0, &base->x8[i]);
         thing->x10 = 0;
 

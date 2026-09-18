@@ -305,7 +305,7 @@ void ifMagnify_802FBBDC(HSD_GObj* gobj)
     bool is_outside;
 
     magnify = &ifMagnify_804A1DE0;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         magnify->player[i].state.is_offscreen = 0;
     }
 
@@ -318,7 +318,7 @@ void ifMagnify_802FBBDC(HSD_GObj* gobj)
             HSD_CObjEndCurrent();
         }
 
-        for (i = 0; i < 6; i++) {
+        for (i = 0; i < GM_MAX_PLAYERS; i++) {
             player = &magnify->player[i];
             fighter_gobj = Player_GetEntity(i);
             if (player->state.ignore_offscreen || fighter_gobj == NULL ||
@@ -563,7 +563,7 @@ void ifMagnify_802FC750(void)
     ifMagnify* base = &ifMagnify_804A1DE0;
     s32 i;
 
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         if (base->player[i].gobj != NULL) {
             HSD_GObjFree(base->player[i].gobj);
             base->player[i].gobj = NULL;
@@ -615,7 +615,7 @@ void ifMagnify_802FC870(void)
     archive = ifAll_GetArchive();
     lbArchive_LoadSections(*archive, (void**) &ifMagnify_804A1DE0,
                            ifMagnify_804D57E8, 0);
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         ifMagnify_802FC3C0(i);
     }
     ifMagnify_802FC618();
@@ -624,7 +624,7 @@ void ifMagnify_802FC870(void)
 void ifMagnify_802FC8E8(void)
 {
     int i;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         ifMagnify_804A1DE0.player[i].state.ignore_offscreen = 1;
     }
 }
@@ -632,7 +632,7 @@ void ifMagnify_802FC8E8(void)
 void ifMagnify_802FC940(void)
 {
     int i;
-    for (i = 0; i < 6; i++) {
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         ifMagnify_804A1DE0.player[i].state.ignore_offscreen = 0;
     }
 }
