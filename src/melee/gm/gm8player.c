@@ -60,6 +60,7 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
 {
     const PlayerInitData* occupied_slot[GM8P_EXTRA_BASE];
     int occupied = 0;
+    u8 cpu_level;
     int i;
 
     gm8p_active_count = 0;
@@ -86,6 +87,17 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
         return;
     }
 
+    /* Match the difficulty of the CPUs the player already set up, so a level
+     * 9 match gets level 9 extras. With no CPUs in the match there is nothing
+     * to copy; 5 is the middle of the CSS's 1-9 range. */
+    cpu_level = 5;
+    for (i = 0; i < occupied; i++) {
+        if (occupied_slot[i]->slot_type == Gm_PKind_Cpu) {
+            cpu_level = occupied_slot[i]->cpu_level;
+            break;
+        }
+    }
+
     for (i = 0; i < GM8P_EXTRA_COUNT; i++) {
         PlayerInitData* p = &start->players[GM8P_EXTRA_BASE + i];
         /* Clone a character that is already in the match rather than adding a
@@ -99,8 +111,11 @@ void gm8Player_ConfigureMatch(StartMeleeData* start)
          * ft/fighter.c:695 expects. */
         p->slot = 0;
         p->slot_type = Gm_PKind_Cpu;
-        p->cpu_kind = 0;
-        p->cpu_level = 5;
+        /* CpuKind_0 is Training Mode's standing dummy (gmtrainingmode.c:125);
+         * CpuKind_4 is the regular VS AI that gm_SetupPlayerDefaults gives
+         * every CPU (gm_1601.c:3538). */
+        p->cpu_kind = CpuKind_4;
+        p->cpu_level = cpu_level;
         p->nametag = GM_NAMETAG_NONE;
         /* Stages only publish four spawn points, so the extra fighters reuse
          * them. Overlapping spawns push apart on their own. */
