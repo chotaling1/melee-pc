@@ -69,12 +69,14 @@
 #include <sysdolphin/baselib/gobjproc.h>
 #include <sysdolphin/baselib/jobj.h>
 #include <sysdolphin/baselib/lobj.h>
+#include <sysdolphin/baselib/random.h>
 #include <sysdolphin/baselib/sislib.h>
 #include <sysdolphin/baselib/state.h>
 #include <sysdolphin/baselib/tev.h>
 
 #include <pc/pc.h>
 
+#include <math.h>
 #include <stdio.h>
 
 #define N_SLOTS GM_MAX_PLAYERS
@@ -126,6 +128,19 @@
 
 #define N_TEAMS 3
 
+/* Sounds, as mncharsel.c plays them. */
+#define SFX_COIN_GRAB 0xB7 /* picking a coin up */
+#define SFX_COIN_DROP 0xB8 /* setting a coin down */
+#define SFX_DOOR_OPEN 0xB9 /* a slot joins */
+#define SFX_DOOR_SHUT 0xBA /* a slot goes off */
+
+/* Coin model (`token`) joints, as fn_80262648: the label (P1-P4 / CPU, a
+ * texture frame) and the colour (a material-animation frame). */
+#define COIN_LABEL_JOINT 4
+#define COIN_COLOR_JOINT 3
+#define COIN_LABEL_CPU 16
+#define COIN_COLOR_CPU 8
+
 #define LEVEL_DEFAULT 5
 
 /* Grid-model joints that belong to the vanilla doors' row: per-port KO star
@@ -150,6 +165,17 @@ typedef struct Mn8Slot {
     u8 teams;   ///< copy of is_teams, only so the label refresh sees a toggle
 } Mn8Slot;
 
+typedef struct Mn8Coin {
+    HSD_JObj* jobj;
+    f32 x;  ///< resting place on the icon
+    f32 y;
+    f32 dx; ///< drawn position, sliding towards (x, y)
+    f32 dy;
+    u8 ckind; ///< icon it was put on, to notice a new pick
+    u8 color; ///< colour key it was last drawn with, 0xFF to force
+    u8 timer;
+} Mn8Coin;
+
 typedef struct Mn8Hand {
     HSD_JObj* jobj;
     f32 x;
@@ -172,6 +198,9 @@ static struct {
     HSD_JObj* background;
     HSD_JObj* menu;
     Mn8Hand hand[N_PORTS];
+    Mn8Coin coin[N_SLOTS];
+    HSD_JObj* banner;
+    u32 banner_timer;
     int text_ctx;
     HSD_Text* text[N_SLOTS];
     Mn8Slot slot[N_SLOTS];
@@ -751,10 +780,17 @@ static void mn8Css_ClickPanel(int port, int k)
 
     if (k == h->target) {
         mn8Css_CycleKind(k);
-        if (mn8css.slot[k].kind == SLOT_OFF && k != port) {
-            mn8Css_Release(port);
+        if (mn8css.slot[k].kind == SLOT_OFF) {
+            if (k != port) {
+                mn8Css_Release(port);
+            }
+            lbAudioAx_800237A8(SFX_DOOR_SHUT, 0x7F, 0x40);
+        } else if (mn8css.slot[k].kind == SLOT_HMN || k >= N_PORTS) {
+            /* just came on (HMN from Off; P5-P8 CPU from Off) */
+            lbAudioAx_800237A8(SFX_DOOR_OPEN, 0x7F, 0x40);
+        } else {
+            sfxMove();
         }
-        sfxMove();
         return;
     }
     if (k == port) {
@@ -779,8 +815,10 @@ static void mn8Css_ClickPanel(int port, int k)
     h->target = (s8) k;
     if (mn8css.slot[k].kind == SLOT_OFF) {
         mn8css.slot[k].kind = SLOT_CPU;
+        lbAudioAx_800237A8(SFX_DOOR_OPEN, 0x7F, 0x40);
+    } else {
+        lbAudioAx_800237A8(SFX_COIN_GRAB, 0x7F, 0x40);
     }
-    sfxMove();
 }
 
 /// A on character @p ckind.
@@ -802,7 +840,8 @@ static void mn8Css_Pick(int port, int ckind)
     if (k != port) {
         mn8Css_Release(port);
     }
-    sfxForward();
+    mnCharSel_PcAnnounce(ckind);
+    lbAudioAx_800237A8(SFX_COIN_DROP, 0x7F, 0x40);
 }
 
 static void mn8Css_ToggleTeams(void)
@@ -892,7 +931,7 @@ static bool mn8Css_HandInput(int port)
             sfxBack();
         } else if (s->ckind != ChKind_None) {
             s->ckind = ChKind_None;
-            sfxBack();
+            lbAudioAx_800237A8(SFX_COIN_GRAB, 0x7F, 0x40);
         }
     }
     if (!(held & HSD_PAD_B)) {
@@ -911,9 +950,143 @@ static bool mn8Css_HandInput(int port)
             mn8Css_Leave(1); /* same value the vanilla screen uses for Start */
             return true;
         }
-        sfxBack();
+        lbAudioAx_80024030(3); /* the vanilla screen's refusal buzz */
     }
     return false;
+}
+
+/// Colour key for slot @p k's coin, as fn_80262648's model->x6: the port's
+/// colour for a human, grey for a CPU; in Teams the team's (+4 for a CPU).
+static u8 mn8Css_CoinColor(int k)
+{
+    static const u8 team_coin[N_TEAMS] = { 0, 1, 3 };
+    const Mn8Slot* s = &mn8css.slot[k];
+
+    if (mn8Css_Teams()) {
+        return (u8) (team_coin[s->team] + (s->kind == SLOT_CPU ? 4 : 0));
+    }
+    return s->kind == SLOT_HMN ? (u8) k : COIN_COLOR_CPU;
+}
+
+/// Coins sit on their character's icon, nudged apart from each other and
+/// kept inside the icon, sliding in at 3 units a frame: fn_80262648 without
+/// the carried-in-hand state.
+static void mn8Css_CoinsThink(void)
+{
+    int k;
+    int j;
+
+    for (k = 0; k < N_SLOTS; k++) {
+        const Mn8Slot* s = &mn8css.slot[k];
+        Mn8Coin* c = &mn8css.coin[k];
+        f32 l, r, u, d;
+        u8 color;
+
+        if (s->kind == SLOT_OFF || s->ckind == ChKind_None ||
+            !mnCharSel_PcIconBounds(s->ckind, &l, &r, &u, &d))
+        {
+            HSD_JObjSetFlagsAll(c->jobj, JOBJ_HIDDEN);
+            c->ckind = ChKind_None;
+            continue;
+        }
+        if (c->ckind != s->ckind) {
+            /* New pick: drop it in the middle of the icon, flying in from
+             * the panel. */
+            if (c->ckind == ChKind_None) {
+                c->dx = mn8Css_PanelLeft(k) + PANEL_WIDTH * 0.5F;
+                c->dy = PANEL_TOP;
+            }
+            c->x = (l + r) * 0.5F;
+            c->y = (u + d) * 0.5F;
+            c->ckind = s->ckind;
+        }
+        HSD_JObjClearFlagsAll(c->jobj, JOBJ_HIDDEN);
+
+        /* Push apart from the other coins resting close by. */
+        for (j = 0; j < N_SLOTS; j++) {
+            const Mn8Coin* o = &mn8css.coin[j];
+            f32 dx;
+            f32 dy;
+            f32 dist;
+
+            if (j == k || o->ckind == ChKind_None) {
+                continue;
+            }
+            dx = c->x - o->x + 0.1F * (HSD_Randf() - 0.5F);
+            dy = c->y - o->y + 0.1F * (HSD_Randf() - 0.5F);
+            dist = dx * dx + dy * dy;
+            if (dist < 8.0F && dist > 0.0F) {
+                dist = sqrtf(dist);
+                c->x += 0.05F * dx / dist;
+                c->y += 0.05F * dy / dist;
+            }
+        }
+        if (c->x < l + 1.5F) c->x = l + 1.5F;
+        if (c->x > r - 1.5F) c->x = r - 1.5F;
+        if (c->y > u - 1.5F) c->y = u - 1.5F;
+        if (c->y < d + 1.5F) c->y = d + 1.5F;
+
+        {
+            f32 dx = c->x - c->dx;
+            f32 dy = c->y - c->dy;
+            f32 dist = dx * dx + dy * dy;
+
+            if (dist < 9.0F) {
+                c->dx = c->x;
+                c->dy = c->y;
+            } else {
+                dist = sqrtf(dist);
+                c->dx += 3.0F * dx / dist;
+                c->dy += 3.0F * dy / dist;
+            }
+        }
+
+        /* Label and colour; the colour animation replays every 40 frames. */
+        color = mn8Css_CoinColor(k);
+        if (color != c->color || ++c->timer > 0x27) {
+            HSD_JObj* jobj;
+
+            lb_80011E24(c->jobj, &jobj, COIN_LABEL_JOINT, -1);
+            HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjReqAnim,
+                            AOBJ_ARG_AF,
+                            (f32) (s->kind == SLOT_HMN ? k * 4
+                                                       : COIN_LABEL_CPU));
+            HSD_JObjAnimAll(jobj);
+            HSD_ForeachAnim(jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                            AOBJ_ARG_AOV, NULL);
+            lb_80011E24(c->jobj, &jobj, COIN_COLOR_JOINT, -1);
+            HSD_ForeachAnim(jobj, JOBJ_TYPE, MOBJ_MASK, HSD_AObjReqAnim,
+                            AOBJ_ARG_AF, (f32) (color * 0x28));
+            c->color = color;
+            c->timer = 0;
+        }
+        HSD_JObjSetTranslateX(c->jobj, c->dx);
+        HSD_JObjSetTranslateY(c->jobj, c->dy);
+        HSD_JObjSetTranslateZ(c->jobj, 1.0F);
+        HSD_JObjAnimAll(c->jobj);
+    }
+}
+
+/// "Ready to fight" whenever Start would go through; the same loop as
+/// fn_80262F44 (play from 0, then repeat 10-100).
+static void mn8Css_BannerThink(void)
+{
+    if (!mn8Css_CanStart()) {
+        HSD_JObjSetFlagsAll(mn8css.banner, JOBJ_HIDDEN);
+        mn8css.banner_timer = 0;
+        return;
+    }
+    if (mn8css.banner_timer == 0) {
+        HSD_ForeachAnim(mn8css.banner, JOBJ_TYPE, ALL_TYPE_MASK,
+                        HSD_AObjReqAnim, AOBJ_ARG_AF, 0.0);
+    } else if (mn8css.banner_timer > 100) {
+        HSD_ForeachAnim(mn8css.banner, JOBJ_TYPE, ALL_TYPE_MASK,
+                        HSD_AObjReqAnim, AOBJ_ARG_AF, 10.0);
+        mn8css.banner_timer = 10;
+    }
+    mn8css.banner_timer++;
+    HSD_JObjClearFlagsAll(mn8css.banner, JOBJ_HIDDEN);
+    HSD_JObjAnimAll(mn8css.banner);
 }
 
 static void mn8Css_InputThink(HSD_GObj* gobj)
@@ -931,6 +1104,8 @@ static void mn8Css_InputThink(HSD_GObj* gobj)
     for (p = 0; p < N_PORTS; p++) {
         mn8Css_PoseHand(p);
     }
+    mn8Css_CoinsThink();
+    mn8Css_BannerThink();
     mn8Css_RefreshText();
 }
 
@@ -1088,6 +1263,34 @@ static void mn8Css_BuildScene(void)
                             "L and R: level   hold B: back   Start: go");
     }
 
+    /* A coin per slot, on the grid, under the hands. */
+    for (i = 0; i < N_SLOTS; i++) {
+        Mn8Coin* c = &mn8css.coin[i];
+
+        gobj = GObj_Create(4, 5, 0x80);
+        c->jobj = mn8Css_LoadModel(&models->token);
+        HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, c->jobj);
+        GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 2, 0x80);
+        HSD_JObjReqAnimAll(c->jobj, 0.0F);
+        HSD_ForeachAnim(c->jobj, JOBJ_TYPE, TOBJ_MASK, HSD_AObjStopAnim,
+                        AOBJ_ARG_AOV, NULL);
+        HSD_JObjSetFlagsAll(c->jobj, JOBJ_HIDDEN);
+        c->ckind = ChKind_None;
+        c->color = 0xFF;
+        c->timer = 0;
+    }
+
+    /* Ready to fight banner, over everything but the hands' link. */
+    gobj = GObj_Create(4, 5, 0x80);
+    mn8css.banner = mn8Css_LoadModel(&models->press_start);
+    HSD_GObjObject_80390A70(gobj, HSD_GObj_JObjKind, mn8css.banner);
+    GObj_SetupGXLink(gobj, HSD_GObj_JObjCallback, 4, 0x80);
+    HSD_JObjReqAnimAll(mn8css.banner, 0.0F);
+    HSD_ForeachAnim(mn8css.banner, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
+                    AOBJ_ARG_AOV, NULL);
+    HSD_JObjSetFlagsAll(mn8css.banner, JOBJ_HIDDEN);
+    mn8css.banner_timer = 0;
+
     /* Input, then one hand per port, drawn over everything. */
     gobj = GObj_Create(4, 5, 0x80);
     HSD_GObj_SetupProc(gobj, mn8Css_InputThink, 1);
@@ -1155,6 +1358,7 @@ void mn8Css_OnEnter(CSSData* css)
 
     mn8Css_LoadSlots();
     mn8Css_BuildScene();
+    mnCharSel_PcEnterSfx(css->match_type);
     pc_log_line("[8css] 8-slot character select screen entered");
 }
 

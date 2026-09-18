@@ -4343,6 +4343,64 @@ f32 mnCharSel_PcModeFrame(int match_type, bool teams)
     return (f32) (teams ? info->mode_teams_frame : info->mode_ffa_frame);
 }
 
+/// Grid icon for @p ckind, or -1.
+static int mnCharSel_PcIconOf(int ckind)
+{
+    int i;
+
+    for (i = 0; i < 0x19; i++) {
+        if (icons[i].char_kind == ckind && icons[i].state >= 1) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// Bounds of @p ckind's grid icon in world units (what the coin clamps to).
+bool mnCharSel_PcIconBounds(int ckind, f32* l, f32* r, f32* u, f32* d)
+{
+    int i = mnCharSel_PcIconOf(ckind);
+
+    if (i < 0) {
+        return false;
+    }
+    *l = icons[i].bound_l;
+    *r = icons[i].bound_r;
+    *u = icons[i].bound_u;
+    *d = icons[i].bound_d;
+    return true;
+}
+
+/// The announcer calls out @p ckind, as a coin drop does on this screen.
+void mnCharSel_PcAnnounce(int ckind)
+{
+    int i = mnCharSel_PcIconOf(ckind);
+
+    if (i < 0) {
+        return;
+    }
+    lbAudioAx_80023870(icons[i].sfx, 0x7F, 0x40, i + 0x8A);
+    gm_80168C5C(icons[i].char_kind);
+}
+
+/// "Choose your character" (or the mode's own line), as mnCharSel_802640A0
+/// plays on entry.
+void mnCharSel_PcEnterSfx(int match_type)
+{
+    static const int rule_sfx[4] = { 0x7535, 0x7538, 0x7537, 0x7536 };
+    int mode;
+
+    if (match_type != 0) {
+        lbAudioAx_800237A8(mnCharSel_803F0A48.mode_info[match_type].enter_sfx,
+                           0x7F, 0x40);
+        return;
+    }
+    mode = gmMainLib_GetGameRules()->mode;
+    if (mode >= 0 && mode < 4) {
+        lbAudioAx_800237A8(rule_sfx[mode], 0x7F, 0x40);
+    }
+}
+
 static void mnCharSel_8pSetup(void)
 {
     HSD_GObj* gobj;

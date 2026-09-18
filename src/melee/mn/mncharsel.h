@@ -33,6 +33,9 @@
 void mnCharSel_PcSetupIcons(HSD_JObj* menu);
 int mnCharSel_PcIconAt(f32 x, f32 y);
 f32 mnCharSel_PcModeFrame(int match_type, bool teams);
+bool mnCharSel_PcIconBounds(int ckind, f32* l, f32* r, f32* u, f32* d);
+void mnCharSel_PcAnnounce(int ckind);
+void mnCharSel_PcEnterSfx(int match_type);
 #endif
 
 #endif
