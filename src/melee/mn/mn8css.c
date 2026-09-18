@@ -515,8 +515,12 @@ static void mn8Css_MoveHand(void)
     if (mn8css.hand_y < HAND_MIN_Y) mn8css.hand_y = HAND_MIN_Y;
     if (mn8css.hand_y > HAND_MAX_Y) mn8css.hand_y = HAND_MAX_Y;
 
+    /* As mnCharSel_CursorThink: the model's own Z is not on the menu plane,
+     * so pin it, and re-run its animation to refresh the matrices. */
     HSD_JObjSetTranslateX(mn8css.hand, mn8css.hand_x);
     HSD_JObjSetTranslateY(mn8css.hand, mn8css.hand_y);
+    HSD_JObjSetTranslateZ(mn8css.hand, 0.0F);
+    HSD_JObjAnimAll(mn8css.hand);
 }
 
 static void mn8Css_Leave(u8 pending)
@@ -728,7 +732,8 @@ static void mn8Css_BuildScene(void)
     }
     {
         /* How-to line in the gap between the grid (bottom y -1) and the
-         * panels (top y PANEL_TOP). */
+         * panels (top y PANEL_TOP). No '/': in the game's text encoding it
+         * starts a control code and swallows the next character. */
         HSD_Text* hint = HSD_SisLib_803A6754(0, mn8css.text_ctx);
         f32 w = 2.0F * -PANEL_LEFT;
 
@@ -745,8 +750,8 @@ static void mn8Css_BuildScene(void)
         hint->box_size_y = 60.0F;
         HSD_SisLib_803A6B98(hint, hint->box_size_x * 0.5F, 0.0F, "%s",
                             "A on a panel: select it   A on a character: "
-                            "give it to the yellow panel   X: HMN/CPU/Off   "
-                            "L/R: level   Start: go");
+                            "give it to the yellow panel   X: HMN, CPU or Off"
+                            "   L and R: level   Start: go");
     }
 
     /* Hand, which also runs the screen's input. */
@@ -759,6 +764,7 @@ static void mn8Css_BuildScene(void)
     HSD_JObjAnimAll(mn8css.hand);
     HSD_ForeachAnim(mn8css.hand, JOBJ_TYPE, ALL_TYPE_MASK, HSD_AObjStopAnim,
                     AOBJ_ARG_AOV, NULL);
+    HSD_JObjClearFlagsAll(mn8css.hand, JOBJ_HIDDEN);
     mn8css.hand_x = 0.0F;
     mn8css.hand_y = 8.0F;
 }
