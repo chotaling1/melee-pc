@@ -37,6 +37,16 @@ there, so the pick-up/carry/drop feel is lost.
 - Open: grabbing a CPU's coin vs. grabbing its panel (today's grab), and
   whether a placed coin still counts as picked when carried away.
 
+### 8-player: P5-P8 spawn on top of P1-P4 (reported 2026-09-18)
+With more than 4 players, players 5-8 start the match at the same spawn
+points as players 1-4. They need their own spawn points.
+- Suspect: `src/melee/gm/gm8player.c:319` sets `spawn_pos = i % 4` because
+  stages only publish four spawn points; positions come from
+  `Stage_80224E64` (`src/melee/gr/stage.h:77`).
+- Open: how to derive the extra four (offset from the vanilla points,
+  midpoints between them, or a per-stage table), and whether respawn
+  platforms after a lost stock have the same problem.
+
 ## Dev tools
 
 ### Mouse control for menus (queued 2026-09-17; phases 0-1 done and confirmed 2026-09-17, OS cursor hidden in game; phase 2 done and confirmed 2026-09-17)
