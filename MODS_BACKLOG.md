@@ -17,14 +17,24 @@ the match.
 - Open: show all 8 on the results screen or only the four ports; the
   results screen is also unchecked in 16:9.
 
-### 8-player CSS: periodic frame skips with 8 on screen (queued 2026-09-18)
-With 8 panels up, the screen drops frames every so often.
-- Touches: per-frame cost in `mn8css.c` scales with slots: portrait
-  resolve (only on change), eight coins with pairwise push-apart and
-  HSD_Randf, eight texture uploads (GXInitTexObj/GXLoadTlut per portrait per
-  frame), and `lbDvd_80018254` streaming the port players' characters.
-  Measure first (frame time log) before guessing; a periodic hitch smells
-  like preload/streaming or texture cache churn rather than steady cost.
+### 8-player match: periodic frame skips in-game (corrected 2026-09-19)
+In an actual match with 8 fighters on screen the game drops frames every so
+often. **Correction (Chuck, 2026-09-19):** this is not the character select
+screen — the CSS is fine; the hitching happens during gameplay.
+- Unknown so far: whether it is steady cost (8 fighters' think/collision,
+  8 HUD elements, twice the draw calls and animation joints) that only
+  misses vblank at peaks, or a periodic hitch (streaming, texture/model
+  cache churn, GC of effect pools). Also unknown whether it scales with
+  fighter count alone or needs specific characters/stages.
+- Measure first: log per-frame time in the port's frame loop (`src/pc/vi.c`
+  / `src/pc/main.c`) and dump the distribution plus the worst frames, then
+  split CPU (game think) from present/GPU before touching game code. A
+  reproducible case (same 8 characters, same stage, same length) matters
+  more than a theory.
+- Suspects to check once there are numbers: per-player loops that were
+  widened past 4 (`GM_MAX_PLAYERS` = 8 in `src/melee/gm/forward.h:21`),
+  interface arrays in `src/melee/if/types.h` (magnify/damage/stock), and
+  anything allocating per frame in `gm8player.c`.
 
 ### 8-player CSS: carry the coin like vanilla (queued 2026-09-18)
 Vanilla: A on your coin picks it up, the hand carries it, A drops it on a
