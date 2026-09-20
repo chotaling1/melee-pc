@@ -26,11 +26,31 @@ screen — the CSS is fine; the hitching happens during gameplay.
   misses vblank at peaks, or a periodic hitch (streaming, texture/model
   cache churn, GC of effect pools). Also unknown whether it scales with
   fighter count alone or needs specific characters/stages.
-- Measure first: log per-frame time in the port's frame loop (`src/pc/vi.c`
-  / `src/pc/main.c`) and dump the distribution plus the worst frames, then
-  split CPU (game think) from present/GPU before touching game code. A
-  reproducible case (same 8 characters, same stage, same length) matters
-  more than a theory.
+- Stage lead (Chuck, 2026-09-19): noticed on **Pokémon Stadium**, the one
+  stage that periodically transforms — a hitch on a timer fits that far
+  better than it fits fighter count. `grStadium_801D13E0`
+  (`src/melee/gr/grpstadium.c:303`) seeds `gr->u.stadium.xD8` from
+  `yakumono_param` (randomized interval) as the transform countdown, and
+  holds a 0x50000 archive (`lbDvd_GetPreloadedArchive(0x7D5)`, falling back
+  to `HSD_MemAlloc(0x50000)` when the preload missed). The four transform
+  archives 0x7D2-0x7D5 are requested in `grpstadium.c:2291`-`2299`.
+  - Cheapest discriminator, and it needs no code: does the hitch happen on
+    Final Destination or Battlefield with the same 8 fighters? If not, this
+    is Stadium's transform, not the player count — and it may then repro
+    with 4 or even 1 player, which makes it far easier to chase.
+  - If it is Stadium-only: check whether the preload actually landed (the
+    `HSD_MemAlloc` fallback means a missed preload is silent) and whether
+    the port's disc read is synchronous on the frame thread —
+    `pc_file_cache_load` (`src/pc/file_cache.cpp:202`-`231`) does a blocking
+    `DVDReadPrio` plus a malloc of the whole file.
+- Measuring is already wired up: `MELEE_FPS=1` (set by
+  `tools/windows/RUN-AND-LOG.bat`) makes `pc_frame_boundary`
+  (`src/pc/vi.c:36`) emit a per-second `fps ... worst ... late>20ms ...`
+  line and a `STALL <ms> at frame <n>` marker for any frame over 33ms (one
+  dropped frame at 60Hz). Both now go through `pc_log_line`, so they are
+  timestamped in `melee-pc.log` next to the load records — a STALL landing
+  on the transform is the whole answer. Playtest wanted: 8-fighter Stadium
+  match via RUN-AND-LOG.bat, then `melee-pc.log` + `melee-frames.log`.
 - Suspects to check once there are numbers: per-player loops that were
   widened past 4 (`GM_MAX_PLAYERS` = 8 in `src/melee/gm/forward.h:21`),
   interface arrays in `src/melee/if/types.h` (magnify/damage/stock), and

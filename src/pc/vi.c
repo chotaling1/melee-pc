@@ -75,19 +75,23 @@ void pc_frame_boundary(void) {
             /* Put the stall in the main log too, where it sits next to
              * whatever aurora reported loading at that moment. An average
              * cannot tell a shader compile from a disc read; a timestamped
-             * marker beside the surrounding records can. */
-            if (delta > 50000000ull) {
+             * marker beside the surrounding records can. The threshold is one
+             * dropped frame at 60Hz: a hitch that repeats every few seconds
+             * reads as a skip long before it reaches 50ms. */
+            if (delta > 33000000ull) {
                 pc_log_line("STALL %.1fms at frame %u", delta / 1e6, s_retrace_count);
             }
         }
         frame_prev_ns = now_ns;
         if (now - fps_t0 >= 1000) {
-            fprintf(stderr,
-                "fps %.1f worst %.1fms late>20ms %u late>33ms %u "
-                "sleep_overshoot %.1fms\n",
+            /* Through pc_log_line, not bare stderr: the summary needs the same
+             * time base as the STALL markers and the load records to be worth
+             * anything, and on Windows stderr and melee-pc.log are separate
+             * files. */
+            pc_log_line("fps %.1f worst %.1fms late>20ms %u late>33ms %u "
+                        "sleep_overshoot %.1fms",
                 fps_n * 1000.0 / (double)(now - fps_t0), frame_worst_ns / 1e6, frame_late_20,
                 frame_late_33, sleep_worst_over_ns / 1e6);
-            fflush(stderr);
             fps_t0 = now;
             fps_n = 0;
             frame_worst_ns = 0;
