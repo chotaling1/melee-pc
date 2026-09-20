@@ -17,44 +17,45 @@ the match.
 - Open: show all 8 on the results screen or only the four ports; the
   results screen is also unchecked in 16:9.
 
-### 8-player match: periodic frame skips in-game (corrected 2026-09-19)
-In an actual match with 8 fighters on screen the game drops frames every so
-often. **Correction (Chuck, 2026-09-19):** this is not the character select
-screen — the CSS is fine; the hitching happens during gameplay.
-- Unknown so far: whether it is steady cost (8 fighters' think/collision,
-  8 HUD elements, twice the draw calls and animation joints) that only
-  misses vblank at peaks, or a periodic hitch (streaming, texture/model
-  cache churn, GC of effect pools). Also unknown whether it scales with
-  fighter count alone or needs specific characters/stages.
-- Stage lead (Chuck, 2026-09-19): noticed on **Pokémon Stadium**, the one
-  stage that periodically transforms — a hitch on a timer fits that far
-  better than it fits fighter count. `grStadium_801D13E0`
-  (`src/melee/gr/grpstadium.c:303`) seeds `gr->u.stadium.xD8` from
-  `yakumono_param` (randomized interval) as the transform countdown, and
-  holds a 0x50000 archive (`lbDvd_GetPreloadedArchive(0x7D5)`, falling back
-  to `HSD_MemAlloc(0x50000)` when the preload missed). The four transform
-  archives 0x7D2-0x7D5 are requested in `grpstadium.c:2291`-`2299`.
-  - Cheapest discriminator, and it needs no code: does the hitch happen on
-    Final Destination or Battlefield with the same 8 fighters? If not, this
-    is Stadium's transform, not the player count — and it may then repro
-    with 4 or even 1 player, which makes it far easier to chase.
-  - If it is Stadium-only: check whether the preload actually landed (the
-    `HSD_MemAlloc` fallback means a missed preload is silent) and whether
-    the port's disc read is synchronous on the frame thread —
-    `pc_file_cache_load` (`src/pc/file_cache.cpp:202`-`231`) does a blocking
-    `DVDReadPrio` plus a malloc of the whole file.
-- Measuring is already wired up: `MELEE_FPS=1` (set by
-  `tools/windows/RUN-AND-LOG.bat`) makes `pc_frame_boundary`
-  (`src/pc/vi.c:36`) emit a per-second `fps ... worst ... late>20ms ...`
-  line and a `STALL <ms> at frame <n>` marker for any frame over 33ms (one
-  dropped frame at 60Hz). Both now go through `pc_log_line`, so they are
-  timestamped in `melee-pc.log` next to the load records — a STALL landing
-  on the transform is the whole answer. Playtest wanted: 8-fighter Stadium
-  match via RUN-AND-LOG.bat, then `melee-pc.log` + `melee-frames.log`.
-- Suspects to check once there are numbers: per-player loops that were
-  widened past 4 (`GM_MAX_PLAYERS` = 8 in `src/melee/gm/forward.h:21`),
-  interface arrays in `src/melee/if/types.h` (magnify/damage/stock), and
-  anything allocating per frame in `gm8player.c`.
+### Pokémon Stadium: crash mid-match after a transformation (corrected 2026-09-19)
+A match on Pokémon Stadium crashes after a while — in the observed run, a
+little after the **grass** transformation.
+- Report history, so the earlier notes are not trusted: first filed as
+  "CSS frame skips with 8 panels", corrected to "in-match frame skips with
+  8 fighters", then corrected again to this crash. Treat the frame-skip
+  framing as withdrawn; only the crash is confirmed. Unknown whether 8
+  players are required at all — nobody has tried Stadium with 4 or 1.
+- The transform path: `grStadium_801D3F90`-ish state machine at
+  `grpstadium.c:2055`+ counts `u.stadium.xD8` down, picks a new kind from
+  {3 fire, 4 grass, 9 water, 6 rock}, frees the previous archive with
+  `grAnime_801C65B0`, then `lbFile_80016580(datfiles[n], xCC, &xC8, ...)`
+  into a single shared 0x50000 buffer, and `grStadium_801D42B8`
+  (`grpstadium.c:1885`) parses it with `grDatFiles_801C6478`.
+  `datfiles[]` (`grpstadium.c:1910`) is GrPs1 fire, GrPs2 grass, GrPs3
+  water, GrPs4 rock.
+- Ruled out by measurement 2026-09-19, so nobody re-treads them:
+  - **Not a buffer overflow from file size.** Read from Chuck's ISO FST:
+    GrPs1 0x4FFC1, GrPs2 0x3407A, GrPs3 0x48A2D, GrPs4 0x45104 — all fit
+    the 0x50000 buffer. Worth knowing that fire is a 63-byte fit (32 bytes
+    after the read's `ROUND_UP_32`), so any future shrink of that buffer
+    smashes the heap on fire first.
+  - **Not archive-slot exhaustion.** `grDatFiles_801C62B4`
+    (`grdatfiles.c:123`) asserts when its 4 static slots are full, but
+    `grAnime_801C65B0` (`granime.c:66`) memzeros the slot on release and
+    the transform path calls it every time, so slots recycle.
+  - **The 0x50000 buffer is a plain reservation.** 0x7D2-0x7D5 are past the
+    disc's 1212 FST entries, so they are synthetic preload-cache keys, not
+    files; `lbDvd_80017740(..., 0x50000, ...)` just reserves scratch.
+- Next step is the crash address, not more reading. `crash-logs/` holds only
+  a stale 2026-09-17 startup crash (`rip 0`, 3 s in) — unrelated. Wanted: a
+  fresh `melee-pc.log` from a Stadium run via `RUN-AND-LOG.bat`, symbolized
+  with `x86_64-w64-mingw32-nm -n` against ImageBase 0x10000000.
+- If the frames land in the transform path, the first thing to check is what
+  still points into the shared 0x50000 buffer when the next transform
+  overwrites it: `grAnime_801C65B0` frees only the `HSD_Archive` struct
+  (`lbHeap_80015CA8`), never the buffer, so any JObj/TObj/collision data the
+  old stage kept is dangling by design and vanilla survives it only because
+  teardown order is exact.
 
 ### 8-player CSS: carry the coin like vanilla (queued 2026-09-18)
 Vanilla: A on your coin picks it up, the hand carries it, A drops it on a
