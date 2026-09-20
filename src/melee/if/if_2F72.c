@@ -20,7 +20,17 @@
 /// Orphaned data strings from original ROM
 static char lbl_803F9780[] = "ScInfStc_scene_models";
 
-static void* lbl_804A1340[13];
+/* Retail sized this 13 = 2 * 6 + 1, for GM_DISC_MAX_PLAYERS slots: entry 0 is
+ * the model desc, then each slot owns base[2*slot + 1] and base[2*slot + 2].
+ * With GM_MAX_PLAYERS raised to 8, slots 6 and 7 index 13..16, past the 13
+ * declared entries. The reason that crashed rather than merely corrupting
+ * something is the cleanup: fn_802F75D4/fn_802F7670 only scanned six slots, so
+ * an out-of-bounds entry was never cleared when its gobj was freed. The next
+ * stock loss for that slot handed the dangling pointer to HSD_GObjFree ->
+ * GObj_RemoveUserData -> efLib_remove_user_data, which read effect->gobj off a
+ * null user_data (fault on 0x8, the 64-bit offset of that field). That is why
+ * it took a few minutes and a second stock loss on the same slot to hit. */
+static void* lbl_804A1340[2 * GM_MAX_PLAYERS + 1];
 
 s32 fn_802F7288(HSD_GObj* gobj, Element_803F9628* entry)
 {
@@ -135,7 +145,7 @@ void fn_802F75D4(HSD_GObj* gobj)
     if (lb_8000B09C(jobj) == 0) {
         base = lbl_804A1340;
         data = base;
-        for (i = 0; i < 6; data += 2, i++) {
+        for (i = 0; i < GM_MAX_PLAYERS; data += 2, i++) {
             if (data[1] == gobj) {
                 base[i * 2 + 1] = NULL;
                 break;
@@ -157,7 +167,7 @@ void fn_802F7670(HSD_GObj* gobj)
     if (lb_8000B09C(jobj) == 0) {
         base = lbl_804A1340;
         data = base;
-        for (i = 0; i < 6; data += 2, i++) {
+        for (i = 0; i < GM_MAX_PLAYERS; data += 2, i++) {
             if (data[2] == gobj) {
                 base[i * 2 + 2] = NULL;
                 break;
@@ -172,44 +182,18 @@ void fn_802F7670(HSD_GObj* gobj)
 void fn_802F770C(HSD_GObj* gobj, int callback)
 {
     HudIndex* status = ifStatus_GetHUDInfo();
-    void** ptr = lbl_804A1340;
-    void** ptr2;
-    void** ptr3;
-    void** ptr4;
+    void** base = lbl_804A1340;
     s32 slot;
-    void* temp;
+    s32 i;
 
-    if (ptr[1] == gobj) {
-        slot = 0;
-    } else {
-        if ((temp = (ptr += 2)[1]) == gobj) {
-            slot = 1;
-        } else {
-            ptr2 = ptr;
-            temp = ptr2[3];
-            ptr4 = ptr2 + 2;
-            if (temp == gobj) {
-                slot = 2;
-            } else {
-                temp = ptr4[3];
-                ptr = ptr4 + 2;
-                if (temp == gobj) {
-                    slot = 3;
-                } else {
-                    temp = ptr[3];
-                    ptr2 = ptr + 2;
-                    if (temp == gobj) {
-                        slot = 4;
-                    } else {
-                        temp = ptr2[3];
-                        if (temp == gobj) {
-                            slot = 5;
-                        } else {
-                            slot = -1;
-                        }
-                    }
-                }
-            }
+    /* Retail unrolled this as six hand-written comparisons on base[2*i + 1].
+     * Rolled up so it covers GM_MAX_PLAYERS: left unrolled, slots 6 and 7
+     * always fell through to -1 and skipped the digit-hiding check. */
+    slot = -1;
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
+        if (base[i * 2 + 1] == gobj) {
+            slot = i;
+            break;
         }
     }
 
@@ -269,18 +253,9 @@ void fn_802F7994(HSD_GObj* gobj)
     s32 slot;
     void** entry;
     HSD_JObj* jobj;
-    void** ptr;
-    void** ptr2;
-    void** ptr3;
-    void** ptr4;
-    void* t0;
-    void* t1;
-    void* t2;
-    void* t3;
-    void* t4;
-    void* t5;
     void** base = lbl_804A1340;
     s32 idx;
+    s32 i;
     f32 frame;
     HSD_GObj* result;
 
@@ -289,33 +264,12 @@ void fn_802F7994(HSD_GObj* gobj)
     jobj = gobj->hsd_obj;
     frame = lbGetJObjCurrFrame(jobj);
 
-    ptr = base;
-    if ((t0 = ptr[1]) == gobj) {
-        slot = 0;
-    } else {
-        if ((t1 = (ptr += 2)[1]) == gobj) {
-            slot = 1;
-        } else {
-            ptr2 = ptr + 2;
-            if ((t2 = ptr[3]) == gobj) {
-                slot = 2;
-            } else {
-                ptr3 = ptr2 + 2;
-                if ((t3 = ptr2[3]) == gobj) {
-                    slot = 3;
-                } else {
-                    ptr4 = ptr3 + 2;
-                    if ((t4 = ptr3[3]) == gobj) {
-                        slot = 4;
-                    } else {
-                        if ((t5 = ptr4[3]) == gobj) {
-                            slot = 5;
-                        } else {
-                            slot = -1;
-                        }
-                    }
-                }
-            }
+    /* Same rolled-up six-way scan as fn_802F770C; see the note there. */
+    slot = -1;
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
+        if (base[i * 2 + 1] == gobj) {
+            slot = i;
+            break;
         }
     }
 
