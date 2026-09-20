@@ -5,6 +5,27 @@ Sections are in priority order.
 
 ## Next up (priority, reported by Chuck 2026-09-18)
 
+### 8-player: retail-sized arrays are a recurring bug class (audited 2026-09-19)
+Every 8-player crash so far has been the same shape: state retail sized for
+4 or 6 players, reached with slot 6 or 7. The mid-match stock-loss crash
+(`lbl_804A1340`, fixed in `21f3ac9`) and the results-screen crash below are
+two instances, not two bugs. Procedure lives in the "Melee 8-Player
+Widening" skill; the short version is that `GM_MAX_PLAYERS` (8) sizes code
+arrays, `GM_DISC_MAX_PLAYERS` (6) sizes anything read off the ISO, and the
+*cleanup* loop must be widened in the same edit as the access — a lagging
+cleanup leaves a dangling pointer that crashes minutes later and nowhere
+near the cause.
+- Audit as of 2026-09-19: 99 sites already use `GM_MAX_PLAYERS`; ~244 loops
+  still capped at 4/6 across `gm`/`if`/`ft`/`pl` (mostly false positives,
+  needs triage); ~30 `ASSERT_SIZE` structs in `gm/types.h` whose size
+  changes if a member array is widened.
+- Worst offenders found so far, all results-screen: `ResultsData`
+  (`gm/types.h:980`) is `player_data[6]` plus `x34[6]`/`x4C[6]` under
+  `ASSERT_SIZE(0x5A8)`, `lbl_8046E190[4]` (`gmresult.c:309`), and most of
+  `gmresultplayer.static.h` at `[4]`.
+- Do not bulk-convert. Each hit needs the disc-vs-code decision, and the
+  DAT-driven layouts carry design questions for Chuck.
+
 ### 8-player: results screen crashes (queued 2026-09-18)
 Finishing a match with 8 fighters and going to the results screen crashes
 the game. Never exercised before: every earlier 8-player test stopped at
