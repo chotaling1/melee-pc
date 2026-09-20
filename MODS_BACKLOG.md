@@ -17,9 +17,16 @@ the match.
 - Open: show all 8 on the results screen or only the four ports; the
   results screen is also unchecked in 16:9.
 
-### Pokémon Stadium: crash mid-match after a transformation (corrected 2026-09-19)
-A match on Pokémon Stadium crashes after a while — in the observed run, a
-little after the **grass** transformation.
+### Crash mid-match after a while, any stage (corrected 2026-09-19)
+A match crashes after a few minutes. Seen on Pokémon Stadium (a little after
+the grass transformation) and **also on Battlefield**, which has no
+transformation at all — so this is a general mid-match crash and the stage
+is incidental. Everything below about the Stadium transform path is kept
+only to record what was already ruled out.
+- Open, and the answers change everything: does it need 8 players (nobody
+  has run a 4-player or 1v1 match to the same length), and does a stock
+  upstream `master` build crash the same way? If `master` does, this is a
+  port bug rather than a mods bug.
 - Report history, so the earlier notes are not trusted: first filed as
   "CSS frame skips with 8 panels", corrected to "in-match frame skips with
   8 fighters", then corrected again to this crash. Treat the frame-skip
@@ -48,8 +55,13 @@ little after the **grass** transformation.
     files; `lbDvd_80017740(..., 0x50000, ...)` just reserves scratch.
 - Next step is the crash address, not more reading. `crash-logs/` holds only
   a stale 2026-09-17 startup crash (`rip 0`, 3 s in) — unrelated. Wanted: a
-  fresh `melee-pc.log` from a Stadium run via `RUN-AND-LOG.bat`, symbolized
-  with `x86_64-w64-mingw32-nm -n` against ImageBase 0x10000000.
+  fresh `melee-pc.log` via `RUN-AND-LOG.bat`, symbolized with
+  `x86_64-w64-mingw32-nm -n` against ImageBase 0x10000000.
+  - **Symbolizing needs the matching exe.** The addresses are only
+    meaningful against the binary that produced them, and the log records
+    which one that was: `aurora::card: CARD API Initialized BUILT <date>`.
+    Check that line against the build before mapping any address; Chuck runs
+    a copy on his Desktop, which can lag `dist/`.
 - If the frames land in the transform path, the first thing to check is what
   still points into the shared 0x50000 buffer when the next transform
   overwrites it: `grAnime_801C65B0` frees only the `HSD_Archive` struct
