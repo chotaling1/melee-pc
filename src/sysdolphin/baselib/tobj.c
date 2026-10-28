@@ -1243,6 +1243,16 @@ void HSD_TObjSetup(HSD_TObj* tobj)
 
         TObjSetupMtx(tobj);
         HSD_ASSERT(1578, imagedesc);
+#ifdef TARGET_PC
+        /* Name the culprit before the assert: imagedesc's address tells a
+         * disc texture from a runtime one (e.g. an EFB copy target). */
+        if (!imagedesc->image_ptr) {
+            OSReport("tobj: NULL image_ptr, imagedesc %p (%ux%u fmt %d), tobj %p\n",
+                     (void*) imagedesc, (unsigned) imagedesc->width,
+                     (unsigned) imagedesc->height, (int) imagedesc->format,
+                     (void*) tobj);
+        }
+#endif
         HSD_ASSERT(1579, imagedesc->image_ptr);
 
         lod = tobj->lod != NULL ? tobj->lod : &default_lod;

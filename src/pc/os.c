@@ -360,6 +360,8 @@ void OSReport(const char* msg, ...) {
     va_end(args);
 }
 
+void pc_panic_exit(const char* file, int line, const char* msg);
+
 void OSPanic(const char* file, int line, const char* msg, ...) {
     va_list args;
     va_start(args, msg);
@@ -368,10 +370,12 @@ void OSPanic(const char* file, int line, const char* msg, ...) {
     vsnprintf(buf, sizeof(buf), msg, args);
     __android_log_print(ANDROID_LOG_FATAL, "OSPanic", "PANIC %s:%d: %s", file, line, buf);
 #else
-    fprintf(stderr, "PANIC %s:%d: ", file, line);
-    vfprintf(stderr, msg, args);
-    fputc('\n', stderr);
+    char buf[1024];
+    vsnprintf(buf, sizeof(buf), msg, args);
+    fprintf(stderr, "PANIC %s:%d: %s\n", file, line, buf);
     fflush(stderr);
+    va_end(args);
+    pc_panic_exit(file, line, buf);
 #endif
     va_end(args);
     abort();

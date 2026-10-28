@@ -60,7 +60,7 @@ rm -rf "${run}"
 mkdir -p "${run}/user" "${run}/captures"
 
 declare -A cfg=([mute]=1 [check_updates]=0 [fullscreen]=0 [vsync]=0)
-declare -A env=([MELEE_EXIT_FRAME]=3600 [MELEE_TURBO]=1 [MELEE_VSYNC]=0)
+declare -A env=([MELEE_EXIT_FRAME]=3600 [MELEE_TURBO]=1 [MELEE_VSYNC]=0 [MELEE_HANG_WATCHDOG]=15)
 for arg in "$@"; do
     case "$arg" in
     cfg:*=*) kv=${arg#cfg:}; cfg[${kv%%=*}]=${kv#*=} ;;

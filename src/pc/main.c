@@ -148,6 +148,59 @@ static void describe_addr(void* addr, char* out, size_t out_size) {
     }
 }
 
+#ifdef _M_X64
+/* Walk a thread's stack from a captured context: unwind frames, then any
+ * stack words that point into melee.exe (a fallback when unwinding fails). */
+static void dump_context_stack(FILE* s, const CONTEXT* start) {
+    char where[MAX_PATH + 64];
+    CONTEXT ctx = *start;
+    for (int f = 0; f < 32; f++) {
+        describe_addr((void*)ctx.Rip, where, sizeof(where));
+        fprintf(s, "[FATAL]   ctx #%02d %s\n", f, where);
+        DWORD64 base;
+        PRUNTIME_FUNCTION fn =
+            ctx.Rip != 0 ? RtlLookupFunctionEntry(ctx.Rip, &base, NULL) : NULL;
+        if (fn == NULL) {
+            /* Leaf or invalid rip: the return address is on top of the
+             * stack, as it is right after a bad call. */
+            if (IsBadReadPtr((void*)ctx.Rsp, sizeof(DWORD64))) {
+                break;
+            }
+            ctx.Rip = *(DWORD64*)ctx.Rsp;
+            ctx.Rsp += 8;
+        } else {
+            PVOID handler_data;
+            DWORD64 frame;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data,
+                &frame, NULL);
+        }
+        if (ctx.Rip == 0) {
+            break;
+        }
+    }
+    /* If unwinding goes wrong, anything on the stack that points into
+     * melee.exe is still a likely return address. */
+    HMODULE exe = GetModuleHandleA(NULL);
+    const DWORD64* sp = (const DWORD64*)start->Rsp;
+    int shown = 0;
+    for (int i = 0; i < 512 && shown < 24; i++) {
+        if (IsBadReadPtr(&sp[i], sizeof(DWORD64))) {
+            break;
+        }
+        HMODULE mod;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                (LPCSTR)sp[i], &mod) &&
+            mod == exe)
+        {
+            describe_addr((void*)sp[i], where, sizeof(where));
+            fprintf(s, "[FATAL]   stack +0x%03X %s\n", (unsigned)(i * 8), where);
+            shown++;
+        }
+    }
+}
+#endif
+
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* info) {
     void* frames[32];
     const USHORT count = CaptureStackBackTrace(0, 32, frames, NULL);
@@ -180,58 +233,110 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* info) {
          * dispatcher when the fault is a call through a null or wild
          * function pointer, which loses the only frames that matter. Unwind
          * from the faulting context instead. */
-        CONTEXT ctx = *info->ContextRecord;
         fprintf(s, "[FATAL] faulting thread %lu, rip %p rsp %p\n", GetCurrentThreadId(),
-            (void*)ctx.Rip, (void*)ctx.Rsp);
-        for (int f = 0; f < 32; f++) {
-            describe_addr((void*)ctx.Rip, where, sizeof(where));
-            fprintf(s, "[FATAL]   ctx #%02d %s\n", f, where);
-            DWORD64 base;
-            PRUNTIME_FUNCTION fn =
-                ctx.Rip != 0 ? RtlLookupFunctionEntry(ctx.Rip, &base, NULL) : NULL;
-            if (fn == NULL) {
-                /* Leaf or invalid rip: the return address is on top of the
-                 * stack, as it is right after a bad call. */
-                if (IsBadReadPtr((void*)ctx.Rsp, sizeof(DWORD64))) {
-                    break;
-                }
-                ctx.Rip = *(DWORD64*)ctx.Rsp;
-                ctx.Rsp += 8;
-            } else {
-                PVOID handler_data;
-                DWORD64 frame;
-                RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fn, &ctx, &handler_data,
-                    &frame, NULL);
-            }
-            if (ctx.Rip == 0) {
-                break;
-            }
-        }
-        /* If unwinding goes wrong, anything on the stack that points into
-         * melee.exe is still a likely return address. */
-        HMODULE exe = GetModuleHandleA(NULL);
-        const DWORD64* sp = (const DWORD64*)info->ContextRecord->Rsp;
-        int shown = 0;
-        for (int i = 0; i < 512 && shown < 24; i++) {
-            if (IsBadReadPtr(&sp[i], sizeof(DWORD64))) {
-                break;
-            }
-            HMODULE mod;
-            if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    (LPCSTR)sp[i], &mod) &&
-                mod == exe)
-            {
-                describe_addr((void*)sp[i], where, sizeof(where));
-                fprintf(s, "[FATAL]   stack +0x%03X %s\n", (unsigned)(i * 8), where);
-                shown++;
-            }
-        }
+            (void*)info->ContextRecord->Rip, (void*)info->ContextRecord->Rsp);
+        dump_context_stack(s, info->ContextRecord);
 #endif
         fflush(s);
     }
     return EXCEPTION_EXECUTE_HANDLER;
 }
+
+/* For OSPanic (pc/os.c): the game's own assertions. abort() on Windows can
+ * sit on a modal "abnormal termination" box and never write the log, so
+ * record the panic with a backtrace and terminate instead. */
+void pc_panic_exit(const char* file, int line, const char* msg) {
+    void* frames[32];
+    const USHORT count = CaptureStackBackTrace(1, 32, frames, NULL);
+    FILE* streams[] = {stderr, log_file()};
+    for (size_t i = 0; i < sizeof(streams) / sizeof(*streams); i++) {
+        FILE* s = streams[i];
+        if (s == NULL) {
+            continue;
+        }
+        char where[MAX_PATH + 64];
+        fprintf(s, "[FATAL] panic: %s:%d: %s\n", file, line, msg);
+        for (USHORT f = 0; f < count; f++) {
+            describe_addr(frames[f], where, sizeof(where));
+            fprintf(s, "[FATAL]   #%02u %s\n", (unsigned)f, where);
+        }
+        fflush(s);
+    }
+    TerminateProcess(GetCurrentProcess(), 5);
+}
+
+/* MELEE_HANG_WATCHDOG=<seconds>: if the game thread stops reaching the frame
+ * boundary for that long, log its stack and exit with code 4. A hang
+ * otherwise leaves nothing in the log -- the window just stops -- and a
+ * scripted run waits on it until its timeout. */
+static HANDLE s_main_thread;
+static volatile LONG s_frame_ticks;
+
+void pc_watchdog_tick(void) {
+    InterlockedIncrement(&s_frame_ticks);
+}
+
+static DWORD WINAPI watchdog_thread(LPVOID arg) {
+    const DWORD limit_ms = (DWORD)(uintptr_t)arg;
+    LONG last = -1;
+    DWORD still_ms = 0;
+    for (;;) {
+        Sleep(250);
+        const LONG now = s_frame_ticks;
+        if (now != last || now == 0) {
+            last = now;
+            still_ms = 0;
+            continue;
+        }
+        still_ms += 250;
+        if (still_ms < limit_ms) {
+            continue;
+        }
+        FILE* streams[] = {stderr, log_file()};
+        SuspendThread(s_main_thread);
+        CONTEXT ctx;
+        memset(&ctx, 0, sizeof(ctx));
+        ctx.ContextFlags = CONTEXT_FULL;
+        const BOOL got = GetThreadContext(s_main_thread, &ctx);
+        for (size_t i = 0; i < sizeof(streams) / sizeof(*streams); i++) {
+            FILE* s = streams[i];
+            if (s == NULL) {
+                continue;
+            }
+            fprintf(s, "[FATAL] hang: no frame for %lu ms (frame tick %ld)\n",
+                (unsigned long)still_ms, (long)now);
+#ifdef _M_X64
+            if (got) {
+                dump_context_stack(s, &ctx);
+            }
+#endif
+            fflush(s);
+        }
+        TerminateProcess(GetCurrentProcess(), 4);
+    }
+    return 0;
+}
+
+static void watchdog_start(void) {
+    const char* env = getenv("MELEE_HANG_WATCHDOG");
+    const long secs = env != NULL ? strtol(env, NULL, 10) : 0;
+    if (secs <= 0) {
+        return;
+    }
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &s_main_thread,
+        0, FALSE, DUPLICATE_SAME_ACCESS);
+    CreateThread(NULL, 0, watchdog_thread, (LPVOID)(uintptr_t)(secs * 1000), 0, NULL);
+    pc_log_line("hang watchdog: %ld s", secs);
+}
+#else
+void pc_panic_exit(const char* file, int line, const char* msg) {
+    (void)file;
+    (void)line;
+    (void)msg;
+    abort();
+}
+void pc_watchdog_tick(void) {}
+static void watchdog_start(void) {}
 #endif
 
 static void usage(const char* argv0) {
@@ -412,6 +517,7 @@ MELEE_EXPORT int main(int argc, char* argv[]) {
     if (launched != 1)
         return launched == 0 ? 0 : 1;
 
+    watchdog_start();
     pc_menu_init(info.window);
     pc_platform_init();
     aurora_card_set_present(card);

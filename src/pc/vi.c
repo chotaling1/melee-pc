@@ -33,6 +33,7 @@ static bool s_in_frame;
 void pc_os_run_alarms(void);
 void aurora_heap_check(void);
 void gmTest_Frame(void);
+void pc_watchdog_tick(void);
 
 /* Debug capture for scripted runs, all off unless set:
  *   MELEE_CAPTURE_FRAMES  comma list of retrace counts to save, e.g. 600,1200
@@ -247,6 +248,7 @@ void pc_frame_boundary(void) {
     s_in_frame = true;
 
     s_retrace_count++;
+    pc_watchdog_tick();
     gmTest_Frame();
     pc_os_run_alarms();
     if (s_pre_cb) {
