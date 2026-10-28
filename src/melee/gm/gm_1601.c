@@ -2985,7 +2985,12 @@ void gm_80166378(MatchEnd* arg0_raw)
     memzero(arg0->_x448, sizeof(arg0->_x448));
     arg0->frame_count = gm_GetFrameCount();
     arg0->x7 = fn_8016B728();
-    for (i = 0; i < 6; i++) {
+    /* PC: every player slot. With 6, the memzero above leaves slots 6-7 at
+     * pkind 0 (Human), and the VS end-of-match loops widened to
+     * GM_MAX_PLAYERS (fn_8016C4F4's bonus pass) then score a fighter that
+     * does not exist and crash, in every match, not just 8-player ones.
+     * Everything read here lives in player_slots[GM_MAX_PLAYERS]. */
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
         arg0->player_standings[i].pkind = Player_GetPlayerSlotType(i);
         if (arg0->player_standings[i].pkind != 3) {
             arg0->player_standings[i].ckind = Player_GetPlayerCharacter(i);
