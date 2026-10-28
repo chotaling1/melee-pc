@@ -37,6 +37,24 @@ the match.
   `tools/wintest_report.py m8`. Crashes on the first results frame in
   `fn_80174FD0` <- `fn_80178BB4` (gmresultplayer.c:1099), reading
   `player_data[i].jobjs[5]` for slot 6: `ResultsData.player_data` is `[6]`.
+- **Decision (Chuck, 2026-10-27): show all 8, two rows of 4.**
+- How the screen is built (read 2026-10-27): one panel model
+  (`GM_SCENE_MODEL(pnlsce, 0)`, `gmresult.c:~1155`) holds exactly 4 columns;
+  each column's parts are looked up by joint id per column (0x42-0x45 for
+  `jobjs[0]`, 0x1D/0x25/... for `jobjs[1]`, and so on through `jobjs[12]`),
+  into `ResultsData.player_data[6]` (`gm/types.h:980`, `ASSERT_SIZE 0x5A8`,
+  not disc data, so it can widen). Columns are per *port*: player k pages
+  their own stats with their pad (`gmresultplayer.c:537-705`), so CPU
+  columns need the auto-advance path (`case 0/1` timers) or P1 control.
+  Loops are a mix of `< 4` (column setup, input, rank count `fn_801795D4`)
+  and `< 6` (`fn_80178BB4_init_players`, `fn_80179350`), which is why slot 4+
+  reaches a NULL column and slots 6-7 run past the array.
+- Plan: (1) widen `ResultsData` to `GM_MAX_PLAYERS` under `MELEE_PC` and
+  make every per-slot loop stop at the slots that have a column, so 8
+  players reach results without crashing; (2) load the panel model a second
+  time for row 2 (columns 4-7), place the two instances as top/bottom rows
+  and scale them, verify with `MELEE_TEST_CAPTURE=results:30,results:200`;
+  (3) winner model/name banner and rank numbers 1-8, then teams.
 - A separate end-of-match crash hit *every* VS match (any player count):
   standings for slots 6-7 were left as "human". Fixed in `155f07c`; the
   results-screen crash above is what remains.
@@ -49,6 +67,13 @@ the match.
   results screen is also unchecked in 16:9.
 
 ### Crash mid-match after a while, any stage (corrected 2026-09-19)
+**Likely resolved, 2026-10-27; confirm on the new build.** Chuck plays the
+Desktop copy, built Sep 18 (card line `BUILT <Sep 17 2026>`), with 2-minute
+timed rules. That build crashed (a) in every VS match at the moment the
+match ended (`155f07c`) and (b) when slot 7/8 lost a stock (`21f3ac9`, Sep
+19). Current code: two 3.3-minute 8-CPU stock matches on Battlefield (items
+off and on, 32 KOs each) ran to a natural end with no crash, as did a
+4-player control. The only crash left is the 8-player results screen.
 A match crashes after a few minutes. Seen on Pokémon Stadium (a little after
 the grass transformation) and **also on Battlefield**, which has no
 transformation at all — so this is a general mid-match crash and the stage
