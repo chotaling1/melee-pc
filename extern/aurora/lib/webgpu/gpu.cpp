@@ -1061,7 +1061,10 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
       .surfaceConfiguration =
           wgpu::SurfaceConfiguration{
               .format = surfaceFormat,
-              .usage = wgpu::TextureUsage::RenderAttachment,
+              /* CopySrc where offered, so a debug frame capture can read back
+               * the composited frame including the RmlUi/ImGui overlays. */
+              .usage = wgpu::TextureUsage::RenderAttachment |
+                       (g_surfaceCapabilities.usages & wgpu::TextureUsage::CopySrc),
               .width = size.native_fb_width,
               .height = size.native_fb_height,
               .presentMode = presentMode,

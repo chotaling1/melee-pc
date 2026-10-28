@@ -5,6 +5,7 @@
 #ifdef AURORA_ENABLE_GX
 #include "gfx/resources.hpp"
 #include "gfx/frame.hpp"
+#include "gfx/frame_capture.hpp"
 #include "gfx/recording.hpp"
 #include "gfx/render_worker.hpp"
 #include "gx/command_processor.hpp"
@@ -289,7 +290,7 @@ void end_frame() noexcept {
 #endif
 
   gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), rmlOverlay, viewport,
-                  imguiDrawData = std::move(imguiDrawData)](
+                  imguiDrawData = std::move(imguiDrawData), capturePath = gfx::frame_capture::take_request()](
                      wgpu::CommandEncoder& encoder, std::vector<gfx::AfterSubmitCallback> afterSubmitCallbacks) {
     wgpu::Texture currentTexture;
     wgpu::TextureView currentView;
@@ -382,6 +383,12 @@ void end_frame() noexcept {
     } else {
       Log.info("Skipping present; no usable surface texture ({})", magic_enum::enum_name(surfaceStatus));
     }
+    /* The surface when it allows copies (what the player sees, overlays
+     * included); the EFB otherwise, e.g. with no surface while minimized. */
+    const bool captureSurface =
+        canPresent && (webgpu::g_graphicsConfig.surfaceConfiguration.usage & wgpu::TextureUsage::CopySrc);
+    auto capture = gfx::frame_capture::encode(
+        encoder, captureSurface ? currentTexture : webgpu::present_source().texture, capturePath);
     webgpu::gpu_prof::frame_end(encoder);
     const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
     const auto buffer = encoder.Finish(&cmdBufDescriptor);
@@ -390,6 +397,7 @@ void end_frame() noexcept {
       g_queue.Submit(1, &buffer);
     }
     webgpu::gpu_prof::after_submit();
+    gfx::frame_capture::write(std::move(capture));
     if (canPresent && g_surface) {
       ZoneScopedN("Present");
       wgpu::ConvertibleStatus status = wgpu::Status::Error;

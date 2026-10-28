@@ -45,6 +45,8 @@ add_library(aurora_gx STATIC
         lib/dolphin/gx/GXAurora.cpp
         lib/gfx/png_io.cpp
         lib/gfx/png_io.hpp
+        lib/gfx/frame_capture.cpp
+        lib/gfx/frame_capture.hpp
 )
 add_library(aurora::gx ALIAS aurora_gx)
 set_target_properties(aurora_gx PROPERTIES FOLDER "aurora")

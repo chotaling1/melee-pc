@@ -363,12 +363,18 @@ MELEE_EXPORT int main(int argc, char* argv[]) {
             usage(argv[0]);
         }
     }
+    /* MELEE_USER_DIR points the memory card, launcher.cfg and caches at a
+     * private directory, so scripted test runs never touch the player's save
+     * or preferences. SDL_GetPrefPath ignores the environment on Windows. */
+    const char* user_dir = getenv("MELEE_USER_DIR");
+    char* pref_path = user_dir && user_dir[0] ? NULL : SDL_GetPrefPath(NULL, "melee-pc");
+    const char* user_path = pref_path ? pref_path : user_dir;
     AuroraConfig config = {
         /* appName doubles as the window title; the save/cache dirs stay
          * pinned so a renamed test window still uses the same memory card. */
         .appName = getenv("MELEE_WINDOW_TITLE") ? getenv("MELEE_WINDOW_TITLE") : "melee-pc",
-        .userPath = SDL_GetPrefPath(NULL, "melee-pc"),
-        .cachePath = SDL_GetPrefPath(NULL, "melee-pc"),
+        .userPath = user_path,
+        .cachePath = user_path,
         .msaa = 1,
         .maxTextureAnisotropy = 16,
         /* MELEE_VSYNC=0 picks Mailbox/Immediate instead of FifoRelaxed; some

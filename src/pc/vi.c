@@ -33,6 +33,68 @@ static bool s_in_frame;
 void pc_os_run_alarms(void);
 void aurora_heap_check(void);
 
+/* Debug capture for scripted runs, all off unless set:
+ *   MELEE_CAPTURE_FRAMES  comma list of retrace counts to save, e.g. 600,1200
+ *   MELEE_CAPTURE_EVERY   save every Nth frame
+ *   MELEE_CAPTURE_DIR     output directory (default "captures")
+ *   MELEE_EXIT_FRAME      exit cleanly after this retrace count
+ *   MELEE_TURBO           skip the 60 Hz pacing sleep and run as fast as the
+ *                         GPU allows (pair with MELEE_VSYNC=0); the simulation
+ *                         steps once per retrace either way, so results match
+ * Frames are numbered by VIGetRetraceCount(), so with a fixed MELEE_SEED the
+ * same number is the same game frame run to run. Files are <dir>/fNNNNNN.png. */
+static struct {
+    bool init;
+    u32 frames[64];
+    u32 frame_count;
+    u32 every;
+    u32 exit_frame;
+    bool turbo;
+    const char* dir;
+} s_capture;
+
+static void capture_init(void) {
+    const char* list = getenv("MELEE_CAPTURE_FRAMES");
+    const char* every = getenv("MELEE_CAPTURE_EVERY");
+    const char* exit_frame = getenv("MELEE_EXIT_FRAME");
+    const char* dir = getenv("MELEE_CAPTURE_DIR");
+    s_capture.init = true;
+    s_capture.dir = dir != NULL && dir[0] != '\0' ? dir : "captures";
+    while (list != NULL && *list != '\0' && s_capture.frame_count < 64) {
+        char* end;
+        unsigned long frame = strtoul(list, &end, 10);
+        if (end == list) {
+            break;
+        }
+        s_capture.frames[s_capture.frame_count++] = (u32) frame;
+        list = *end == ',' ? end + 1 : end;
+    }
+    s_capture.every = every != NULL ? (u32) strtoul(every, NULL, 10) : 0;
+    s_capture.exit_frame = exit_frame != NULL ? (u32) strtoul(exit_frame, NULL, 10) : 0;
+    s_capture.turbo = getenv("MELEE_TURBO") != NULL && getenv("MELEE_TURBO")[0] != '0';
+    if (s_capture.frame_count != 0 || s_capture.every != 0 || s_capture.exit_frame != 0) {
+        pc_log_line("capture: %u frames listed, every %u, dir %s, exit at %u%s", s_capture.frame_count,
+                    s_capture.every, s_capture.dir, s_capture.exit_frame, s_capture.turbo ? ", turbo" : "");
+    }
+}
+
+/* Called just before the frame numbered `frame` is ended and presented. */
+static void capture_frame_end(u32 frame) {
+    if (!s_capture.init) {
+        capture_init();
+    }
+    bool want = s_capture.every != 0 && frame % s_capture.every == 0;
+    for (u32 i = 0; !want && i < s_capture.frame_count; i++) {
+        want = s_capture.frames[i] == frame;
+    }
+    if (want) {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/f%06u.png", s_capture.dir, frame);
+        aurora_capture_frame(path);
+        pc_log_line("capture: frame %u -> %s", frame, path);
+    }
+}
+
 void pc_frame_boundary(void) {
     static int fps_log = -1;
     static u64 fps_t0;
@@ -48,8 +110,13 @@ void pc_frame_boundary(void) {
     static u64 sleep_worst_over_ns;
 
     if (s_in_frame) {
+        capture_frame_end(s_retrace_count);
         aurora_end_frame();
         s_in_frame = false;
+        if (s_capture.exit_frame != 0 && s_retrace_count >= s_capture.exit_frame) {
+            pc_log_line("capture: MELEE_EXIT_FRAME %u reached, exiting", s_capture.exit_frame);
+            pc_exit_requested = true;
+        }
     }
     aurora_heap_check();    /* no-op unless MELEE_HEAP_CHECK is set */
     pc_widescreen_update(); /* Auto mode follows window resizes. */
@@ -135,7 +202,7 @@ void pc_frame_boundary(void) {
     u64 now = SDL_GetTicksNS();
     if (next_sim_ns == 0 || now > next_sim_ns + sim_period * 2) {
         next_sim_ns = now; /* first frame, or large hitch: resync */
-    } else if (now < next_sim_ns) {
+    } else if (now < next_sim_ns && !s_capture.turbo) {
         const u64 want = next_sim_ns - now;
         /* On standard 60 Hz VSync, aurora_begin_frame already waited for VBlank. On high-refresh
          * (120/144/240 Hz) or VSync-off, this throttles simulation to exact 60 Hz. */

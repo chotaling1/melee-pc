@@ -141,6 +141,10 @@ void aurora_set_resampler(AuroraSampler sampler);
 /** Keeps the previous frame instead of clearing, for hosts that pause the
  *  game: with nothing drawing, a cleared framebuffer presents as black. */
 void aurora_preserve_frame_buffer(bool preserve);
+/** Debug: write the frame ended by the next aurora_end_frame() to a PNG at
+ *  path (directories are created). The EFB is captured, so overlays are
+ *  excluded and the window may be hidden. Stalls that frame on the readback. */
+void aurora_capture_frame(const char* path);
 /** Sets the clock timescale. Default 1.0f. 0.0f is paused. Range 0.0f-16.0f. */
 void aurora_set_timescale(float scale);
 
