@@ -30,6 +30,16 @@ near the cause.
 Finishing a match with 8 fighters and going to the results screen crashes
 the game. Never exercised before: every earlier 8-player test stopped at
 the match.
+- Reproduced 2026-10-27 with the scripted test, no input needed:
+  `tools/wintest.sh m8 cfg:eight_player=1 MELEE_TEST_MATCH=1
+  MELEE_TEST_PLAYERS=fox,marth,falco,zelda,puff,peach,falcon,ganon
+  MELEE_TEST_TIME=20`, run the printed run.bat on Windows, then
+  `tools/wintest_report.py m8`. Crashes on the first results frame in
+  `fn_80174FD0` <- `fn_80178BB4` (gmresultplayer.c:1099), reading
+  `player_data[i].jobjs[5]` for slot 6: `ResultsData.player_data` is `[6]`.
+- A separate end-of-match crash hit *every* VS match (any player count):
+  standings for slots 6-7 were left as "human". Fixed in `155f07c`; the
+  results-screen crash above is what remains.
 - Touches: the results scene reads per-player match data and draws a column
   per player; its arrays and layouts were sized for 4 (like the HUD, which
   needed `gm8Player_HudPlayerCount`). Start from the crash address in
