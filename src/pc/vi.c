@@ -32,6 +32,7 @@ static bool s_in_frame;
 
 void pc_os_run_alarms(void);
 void aurora_heap_check(void);
+void gmTest_Frame(void);
 
 /* Debug capture for scripted runs, all off unless set:
  *   MELEE_CAPTURE_FRAMES  comma list of retrace counts to save, e.g. 600,1200
@@ -76,6 +77,18 @@ static void capture_init(void) {
         pc_log_line("capture: %u frames listed, every %u, dir %s, exit at %u%s", s_capture.frame_count,
                     s_capture.every, s_capture.dir, s_capture.exit_frame, s_capture.turbo ? ", turbo" : "");
     }
+}
+
+/* Capture the frame being drawn now as <dir>/<tag>.png (gmtest.c names
+ * these by scene and scene-relative frame). */
+void pc_capture_tagged(const char* tag) {
+    char path[512];
+    if (!s_capture.init) {
+        capture_init();
+    }
+    snprintf(path, sizeof(path), "%s/%s.png", s_capture.dir, tag);
+    aurora_capture_frame(path);
+    pc_log_line("capture: %s -> %s", tag, path);
 }
 
 /* Called just before the frame numbered `frame` is ended and presented. */
@@ -234,6 +247,7 @@ void pc_frame_boundary(void) {
     s_in_frame = true;
 
     s_retrace_count++;
+    gmTest_Frame();
     pc_os_run_alarms();
     if (s_pre_cb) {
         s_pre_cb(s_retrace_count);

@@ -1,6 +1,7 @@
 #include "mncharsel.h"
 #include "mncharsel_data.h"
 #include "mn8css.h"
+#include <melee/gm/gmtest.h>
 
 #include <melee/ft/forward.h>
 #include <sysdolphin/baselib/forward.h>
@@ -5653,6 +5654,13 @@ void mnCharSel_Scene_OnFrame(void)
     }
 #endif
     mnCharSel_804D6CEC += 1;
+#ifdef MELEE_PC
+    if (gmTest_CssFrame(mnCharSel_804D6CB0, mnCharSel_804D6CEC)) {
+        mnCharSel_804D6CF6 = 0;
+        gm_801A4B60();
+        return;
+    }
+#endif
     if (mnCharSel_804D6CF6 <= 1) {
         cache = &lbDvd_GetPreloadCacheScene()->game_cache;
         if (mnCharSel_804D6CF5 == 1) {

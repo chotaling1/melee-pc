@@ -32,6 +32,8 @@
  */
 #include "mn8css.h"
 
+#include <melee/gm/gmtest.h>
+
 #include <placeholder.h>
 
 #include <dolphin/gx.h>
@@ -2011,6 +2013,14 @@ void mn8Css_OnFrame(void)
 
     mn8css.frame++;
     if (mn8css.leaving) {
+        return;
+    }
+    /* Scripted runs: take the selection the test driver wrote into the
+     * start data and panels, then leave the way Start does. */
+    if (gmTest_CssFrame(mn8css.css, mn8css.frame)) {
+        mn8Css_LoadSlots();
+        mn8Css_CommitSlots();
+        mn8Css_Leave(1);
         return;
     }
     /* Start streaming the port players' characters in, like the vanilla

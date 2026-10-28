@@ -42,6 +42,9 @@ bool pc_mouse_take_left_click(void);
 uint32_t pc_mouse_idle_ms(void);
 void pc_touch_apply(void);
 
+/* Debug capture of the frame being drawn, to MELEE_CAPTURE_DIR/<tag>.png. */
+void pc_capture_tagged(const char* tag);
+
 /* Set once the window is closed; the game loop is expected to exit. */
 extern bool pc_exit_requested;
 

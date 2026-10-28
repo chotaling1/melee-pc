@@ -1,3 +1,6 @@
+#ifdef TARGET_PC
+#include <melee/gm/gmtest.h>
+#endif
 #include "gmscene.h"
 #ifdef TARGET_PC
 #include "pc/widescreen.h"
@@ -196,6 +199,9 @@ void gm_801A4B88(struct GameSceneInfo* info)
      * camera's horizontal projection, so a menu simply shows more of its
      * world at the sides. */
     pc_widescreen_set_scene(info != NULL);
+    if (info != NULL) {
+        gmTest_SceneEnter(info->scene_kind);
+    }
 #endif
 }
 

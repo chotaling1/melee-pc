@@ -9,6 +9,7 @@
 #include "gmresult.h"
 #include "gm8player.h"
 #include "gmsoccer.h"
+#include "gmtest.h"
 #include "gmvsmelee.h"
 #include "types.h"
 #include <melee/if/if_2FD9.h>
@@ -223,6 +224,7 @@ void onEnterVs(GameModeState* state)
      * extra players have to exist there first. */
     gm8Player_ConfigureMatch(&gmVsMelee_GetVsData()->start);
     gmVsMelee_EnterVs(state, gmVsMelee_GetVsData(), NULL, NULL);
+    gmTest_ConfigureVs(gm_GetGameModeStateEnterData(state));
     gmSoccer_ConfigureMatch(gm_GetGameModeStateEnterData(state));
 }
 
@@ -234,6 +236,7 @@ void onExitVs(GameModeState* state)
     gmVsMelee_ExitVs(state, gmVsMode_State_Results,
                      gmVsMode_State_SuddenDeath);
     mei = gm_GetGameModeStateExitData(state);
+    gmTest_MatchEnd(&mei->match_end);
     for (i = 0; i < GM_MAX_PLAYERS; i++) {
         if (mei->match_end.player_standings[i].pkind != Gm_PKind_NA) {
             gm_80162A98(mei->match_end.player_standings[i].x20);

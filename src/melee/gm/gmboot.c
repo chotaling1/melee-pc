@@ -6,6 +6,9 @@
 #include <melee/lb/lbcardnew.h>
 #include <melee/lb/lblanguage.h>
 #include <melee/ty/toy.h>
+#ifdef MELEE_PC
+#include <melee/gm/gmtest.h>
+#endif
 
 /* 1BF948 */ static void bootOnLoad(GameModeState*);
 /* 1BF9A8 */ static void bootOnLeave(GameModeState*);
@@ -57,6 +60,9 @@ void bootOnLoad(GameModeState* scene)
         gm_801BF708(0);
         scene_data->mode_id = GM_OPENING_MV;
     }
+#ifdef MELEE_PC
+    scene_data->mode_id = gmTest_BootMode(scene_data->mode_id);
+#endif
 }
 
 void bootOnLeave(GameModeState* data)

@@ -1,3 +1,6 @@
+#ifdef MELEE_PC
+#include <melee/gm/gmtest.h>
+#endif
 #include "mnstagesel.h"
 
 #include <placeholder.h>
@@ -932,6 +935,9 @@ void mnStageSel_Scene_OnFrame(void)
     gmArena_SetHovered(arenaSel_IsArena(mnStageSel_804D6CAE)
                            ? mnStageSel_804D6CAE - ARENA_SEL_BASE + 1
                            : 0);
+    if (gmTest_ForcedStage() >= 0) {
+        sss_data->force_stage_id = gmTest_ForcedStage();
+    }
 #endif
     if (sss_data->force_stage_id >= 0) {
         mnStageSel_804D6CAF = 2;
