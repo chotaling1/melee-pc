@@ -49,6 +49,15 @@ the match.
   Loops are a mix of `< 4` (column setup, input, rank count `fn_801795D4`)
   and `< 6` (`fn_80178BB4_init_players`, `fn_80179350`), which is why slot 4+
   reaches a NULL column and slots 6-7 run past the array.
+- **Step 1 done 2026-10-27 (`385e27a`):** 8-player matches reach results and
+  return to the CSS (two seeds, plus 2p/4p regressions). Shows the 4 port
+  columns only. Visible problems left for steps 2-3, from the r81 capture:
+  winner banner says FALCO while the background emblem and a "1st" badge
+  are Fox's, P1 Fox's portrait is an empty grey box, and placements/totals
+  disagree; `gm_80166378`'s team/placement loops (`gm_1601.c`) still stop at
+  6, so ranks over 8 fighters are wrong at the source. The portrait-size
+  tables (`lbl_804D3FD0`..`FF8`, `gm_1798.c:52`) are indexed by place and
+  clamp at 4th for now.
 - Plan: (1) widen `ResultsData` to `GM_MAX_PLAYERS` under `MELEE_PC` and
   make every per-slot loop stop at the slots that have a column, so 8
   players reach results without crashing; (2) load the panel model a second
