@@ -1050,6 +1050,16 @@ static inline void fn_80178BB4_init_players(ResultsData* data,
                                             int* ko_count)
 {
     for (; *i < 6; (*i)++) {
+#ifdef MELEE_PC
+        /* The panel only has columns for slots 0-3 (gmresult.c builds them
+         * from joints 0x42-0x45); retail never put a fighter in 4-5, but an
+         * 8-player match does, and this loop then animated NULL joints. Slots
+         * 6-7 never get here: player_data is [6]. Skip what has no column
+         * until the second row exists. */
+        if (data->player_data[(*i)].jobjs[0] == NULL) {
+            continue;
+        }
+#endif
         HSD_JObjSetFlagsAll(data->player_data[(*i)].jobjs[0], JOBJ_HIDDEN);
         HSD_JObjSetFlagsAll(data->player_data[(*i)].jobjs[4], JOBJ_HIDDEN);
         HSD_JObjSetFlagsAll(data->player_data[(*i)].jobjs[8], JOBJ_HIDDEN);

@@ -157,6 +157,16 @@ void fn_80179990(HSD_GObj* arg0, int arg1, int arg2)
             match_end->team_standings[match_end->player_standings[arg2].team]
                 .is_big_loser;
     }
+#ifdef MELEE_PC
+    /* `lookup` is the finishing place, and it indexes the 4-entry portrait
+     * size tables in lbl_8046E3AC (dim_w1..scissor_y). An 8-player match
+     * has places past 4th, which read the neighbouring table: a 0 height,
+     * so no EFB copy target and the tobj.c image_ptr assert. Size them like
+     * 4th place until the 8-player layout has its own tables. */
+    if (lookup > 3) {
+        lookup = 3;
+    }
+#endif
 
     if (lookup != 0) {
         HSD_JObj* root = (HSD_JObj*) lbl_8046E38C[arg2]->hsd_obj;
@@ -589,6 +599,12 @@ void fn_8017A9B4(int slot)
         int idx = match_end->player_standings[slot].team;
         lookup = match_end->team_standings[idx].is_big_loser;
     }
+#ifdef MELEE_PC
+    /* Same clamp as fn_80179990. */
+    if (lookup > 3) {
+        lookup = 3;
+    }
+#endif
 
     inline1(disp->player_img1, slot, lbl_8046E3AC.dim_w1 + lookup,
             lbl_8046E3AC.dim_h1 + lookup);
