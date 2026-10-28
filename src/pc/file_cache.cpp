@@ -175,6 +175,8 @@ std::string resolve_loose_path(const char* filename) {
     return dir + "/" + rel;
 }
 
+void put_host(const char* filename, const uint8_t* host_src, size_t size, bool from_aram);
+
 bool preload_single_file(const char* name, int entryNum) {
     std::string key = normalize_key(name);
 
@@ -194,7 +196,7 @@ bool preload_single_file(const char* name, int entryNum) {
             if (in.is_open()) {
                 std::vector<uint8_t> buf(st.st_size);
                 in.read(reinterpret_cast<char*>(buf.data()), st.st_size);
-                pc_file_cache_put(key.c_str(), buf.data(), buf.size());
+                put_host(key.c_str(), buf.data(), buf.size(), false);
                 return true;
             }
         }
@@ -223,7 +225,12 @@ bool preload_single_file(const char* name, int entryNum) {
                 (reinterpret_cast<uintptr_t>(raw_mem) + 31) & ~uintptr_t(31));
             s32 bytesRead = DVDReadPrio(&fi, raw_buf, static_cast<s32>(aligned_sz), 0, 1);
             if (bytesRead >= 0) {
-                pc_file_cache_put(key.c_str(), raw_buf, file_len);
+                /* Not pc_file_cache_put: that tells ARAM from host memory
+                 * by address, and a small malloc on Windows can land below
+                 * PC_ARAM_LIMIT, so it would copy this file out of ARAM
+                 * instead -- caching garbage that crashes whoever loads the
+                 * file next (seen as an all-zero PdPm.dat at match start). */
+                put_host(key.c_str(), static_cast<const uint8_t*>(raw_buf), file_len, false);
                 success = true;
             }
             free(raw_mem);
@@ -372,6 +379,16 @@ void pc_file_cache_put(const char* filename, const void* data, size_t size) {
     if (host_src == nullptr) {
         return;
     }
+    put_host(filename, host_src, size, PC_IS_ARAM_ADDR(data));
+}
+
+}  // extern "C"
+
+namespace {
+void put_host(const char* filename, const uint8_t* host_src, size_t size, bool from_aram) {
+    if (filename == nullptr || host_src == nullptr || size == 0) {
+        return;
+    }
 
     std::string key = normalize_key(filename);
 
@@ -397,8 +414,11 @@ void pc_file_cache_put(const char* filename, const void* data, size_t size) {
 
     OSReport("[FileCache] STORED: %s (%zu bytes%s, total: %.2f MB)%s\n", key.c_str(), size,
         pinned ? ", pinned" : "", s_totalCacheBytes / (1024.0 * 1024.0),
-        PC_IS_ARAM_ADDR(data) ? " [from ARAM]" : "");
+        from_aram ? " [from ARAM]" : "");
 }
+}  // namespace
+
+extern "C" {
 
 void pc_file_cache_clear(void) {
     std::lock_guard<std::mutex> lock(s_cacheMutex);
